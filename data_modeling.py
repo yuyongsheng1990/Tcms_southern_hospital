@@ -178,10 +178,11 @@ def main():
     # x为x轴中坐标x的值，y为y轴中坐标y的值，x与y都是长度相同的数组序列，color为点的颜色，marker为散点的形状，
     # linewidth为点的大小
     # plt.scatter(range(len(test_y)),test_y,c='r')
-    plt.scatter(predictions,test_y,c='b')
+    plt.scatter(test_y,predictions,c='b')
+    plt.plot(list(range(test_y.shape[0])), list(range(test_y.shape[0])),color='r')
     plt.xlabel('Number of Events(unit)')
-    plt.ylabel('Tac Daily Dose(mg)')
-    plt.show()
+    plt.ylabel('Tac TDM CONC.')
+    # plt.show()
     # 判断图片保存路径是否存在，否则创建
     jpg_path = project_path + "/jpg"
     mkdir(jpg_path)
@@ -221,29 +222,20 @@ def main():
     # 保存各个变量的shape值的和
     df_shap_values=pd.DataFrame(shap_values)
     shap_list=[]
-    text_list=[]
-    feature_list=[]
     for i in range(df_shap_values.shape[1]):
-        feature_sum = sum(df_shap_values.iloc[:,i])
-        if feature_sum >=0:
-            text='正相关'
-        else:
-            text='负相关'
-            feature_sum=abs(feature_sum)
-        feature_sum = round(feature_sum, 2)
-        feature_list.append(list(tran_x.columns)[i])
-        text_list.append(text)
-        shap_list.append(feature_sum)
+        df_shap_values.iloc[:,i] = df_shap_values.iloc[:,i].apply(lambda x: abs(x))
+    for j in range(df_shap_values.shape[1]):
+        feature_mean = df_shap_values.iloc[:,j].mean()
+        feature_mean = round(feature_mean, 2)
+        shap_list.append(feature_mean)
 
-    df_shap = pd.DataFrame({'features':feature_list,'相关性':text_list,'shap值':shap_list})
+    df_shap = pd.DataFrame({'features':list(tran_x.columns),'shap值':shap_list})
     df_shap = df_shap.sort_values(by=['shap值'], ascending=False)
     df_shap = df_shap.reset_index(drop=True)
 
     writer = pd.ExcelWriter(project_path + '/result/df_19_shap值排序.xlsx')
     df_shap.to_excel(writer)
     writer.save()
-    # plt.savefig(jpg_path + "/重要性评分柱状图.jpg", dpi=300)
-    # plt.clf()  # 删除前面所画的图
 
 if __name__=='__main__':
     main()
