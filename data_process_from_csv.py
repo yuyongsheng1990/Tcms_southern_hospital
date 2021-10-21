@@ -23,6 +23,47 @@ def str_to_datatime(x):
     except:
         return np.NaN
 
+# 使用随机森林对缺失值进行插补
+import pandas as pd
+pd.set_option('mode.chained_assignment', None)
+import numpy as np
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import GridSearchCV
+
+def missing_value_interpolation(df):
+    df = df.reset_index(drop=True)
+    # 提取存在缺失值的列名
+    missing_list = []
+    for i in df.columns:
+        if df[i].isnull().sum() > 0:
+            missing_list.append(i)
+    missing_list_copy = missing_list.copy()
+    # 用该列未缺失的值训练随机森林，然后用训练好的rf预测缺失值
+    for i in range(len(missing_list)):
+        name=missing_list[0]
+        df_missing = df[missing_list_copy]
+        # 将其他列的缺失值用0表示。
+        missing_list.remove(name)
+        for j in missing_list:
+            df_missing[j]=df_missing[j].astype('str').apply(lambda x: 0 if x=='nan' else x)
+        df_missing_is = df_missing[df_missing[name].isnull()]
+        df_missing_not = df_missing[df_missing[name].notnull()]
+        y = df_missing_not[name]
+        x = df_missing_not.drop([name],axis=1)
+        # 列出参数列表
+        tree_grid_parameter = {'n_estimators': list((10, 50, 100, 150, 200))}
+        # 进行参数的搜索组合
+        grid = GridSearchCV(RandomForestRegressor(),param_grid=tree_grid_parameter,cv=3)
+        #rfr=RandomForestRegressor(random_state=0,n_estimators=100,n_jobs=-1)
+        #根据已有数据去拟合随机森林模型
+        grid.fit(x, y)
+        rfr = RandomForestRegressor(n_estimators=grid.best_params_['n_estimators'])
+        rfr.fit(x, y)
+        #预测缺失值
+        predict = rfr.predict(df_missing_is.drop([name],axis=1))
+        #填补缺失值
+        df.loc[df[name].isnull(),name] = predict
+    return df
 
 # 读取保存的csv数据
 print('------------------------读取csv数据--------------------------------------')
@@ -48,10 +89,10 @@ print(len(np.unique(surgery_record['patient_id'])))  # 295
 # 从test_record和test_result文件中提取有效和有用字段
 # diagnose_record = diagnose_record[['diagnostic_record_id','patient_id', 'record_date', 'diagnostic_content']]
 diagnose_content = diagnose_content.drop(['Unnamed: 0'], axis=1)
-doctor_order = doctor_order[[ 'patient_id', 'long_d_order', 'drug_name', 'amount', \
+doctor_order = doctor_order[[ 'patient_id', 'drug_name', 'amount', \
                              'drug_spec', 'dosage', 'frequency', 'start_datetime', 'end_datetime']]
 test_record = test_record[['test_record_id', 'patient_id', 'test_date']]  # (361590,3)
-test_result = test_result[['test_result_id', 'test_record_id', 'project_name', 'test_result', 'is_normal']]  # (2741436, 5)
+test_result = test_result[['test_record_id', 'project_name', 'test_result', 'is_normal']]  # (2741436, 5)
 # surgery_record = surgery_record[['surgical_record_id', 'patient_id', 'surgery_date', 'surgery_name']]
 
 print(test_record.shape)  # (361590, 3)
@@ -66,8 +107,9 @@ diagnose_content_disease=diagnose_content_disease.reset_index(drop=True)
 print(diagnose_content_disease.shape)  # (546,2)
 print(len(np.unique(diagnose_content_disease['patient_id'])))  # 546
 
-# 需求2：提取有自身免疫疾病病人的他克莫司血药浓度（TDM）检测记录，tdm检测前7天内有他克莫司医嘱的数据
-print('---------------------2.提取自身免疫疾病病人的他克莫司tdm检测和用药数据--------------------')
+# 需求2：提取有自身免疫疾病病人的他克莫司血药浓度（TDM）检测记录，tdm检测前7天内有他克莫司医嘱的数据，并做tdm检测间隔15天的过滤
+# 数字化处理他克莫司dosage和frequency数据，并计算日剂量和上一次日剂量
+print('---------------------2.提取自身免疫疾病病人的他克莫司tdm检测数据-------------------')
 # 提取自身免疫疾病病人的检测记录
 disease_list=[]
 for i in np.unique(diagnose_content_disease['patient_id']):
@@ -85,13 +127,14 @@ print(len(np.unique(test_record_disease['patient_id'])))  # 488
 
 # 根据test_record_id合并自身免疫病人的test_record_disease和test_result
 test_record_result = pd.merge(test_record_disease, test_result, on=['test_record_id'], how='inner')  # (2741436, 7)
+test_record_result = test_record_result.drop(['test_record_id'],axis=1)
 # 删除检测项目project_name和test_result为空的数据。
 test_record_result=test_record_result[test_record_result['project_name'].notnull() & test_record_result['test_result'].notnull()]
 # 检验结果按照病人id排序
-test_record_result = test_record_result.sort_values(['patient_id'], ascending=1)
-test_record_result = test_record_result.reset_index(drop=True)
+test_record_result = test_record_result.sort_values(['patient_id','test_date'], ascending=[True,True])
+test_record_result=test_record_result.reset_index(drop=True)
 
-print(test_record_result.shape)  # (209256,7)
+print(test_record_result.shape)  # (209251,7)
 print(len(np.unique(test_record_result['patient_id'])))  # 488
 
 # 提取包含他克莫司tdm检测记录的test_result。
@@ -101,8 +144,13 @@ test_record_result_tdm = test_record_result_tdm.reset_index(drop=True)
 print(test_record_result_tdm.shape)  # (987, 7)，test_date为空的数据
 print(len(np.unique(test_record_result_tdm['patient_id'])))  # 349
 
-# 避免memoryerror, 先从doctor_order中筛选出有他克莫司医嘱的patient_id，再进行合并
-drug_tcms = doctor_order[(doctor_order['drug_name'].str.contains('他克莫司'))]
+writer = pd.ExcelWriter(project_path + '/result/df_1_自身免疫病人的他克莫司tdm检测数据.xlsx')
+test_record_result_tdm.to_excel(writer)
+writer.save()
+
+# 提取他克莫司用药记录。避免memoryerror, 先从doctor_order中筛选出有他克莫司医嘱的patient_id，再进行合并
+print('---------------------2.他克莫司用药数据-------------------')
+drug_tcms = doctor_order[(doctor_order['drug_name'].str.contains('他克莫司胶囊'))]
 # 但这里面包含他克莫司检测(药材科)、他克莫司用药基因(药材科)等无效数据，取反~
 # drug_tcms=drug_tcms[~ drug_tcms['drug_name'].str.contains('药材科')]  # 数据量，(7048,12)
 drug_tcms = drug_tcms.reset_index(drop=True)
@@ -112,11 +160,173 @@ drug_tcms=drug_tcms[drug_tcms['dosage'].notnull() & drug_tcms['frequency'].notnu
 print(drug_tcms.shape)  # (7048,9)
 print(len(np.unique(drug_tcms['patient_id'])))  # 957
 
+writer = pd.ExcelWriter(project_path + '/result/df_2_他克莫司用药数据.xlsx')
+drug_tcms.to_excel(writer)
+writer.save()
+
+# 他克莫司用药dosage处理。因为在两次tdm检测7-15天间隔判断之后，很多数据被删除，1/早、1/晚频次的dosage没法计算平均值。
+print('------------------删除他克莫司用药dosage、frequency空值----------------------------------')
+# 删除频次、剂型、剂量为空的样本
+drug_tcms = drug_tcms[(drug_tcms['drug_spec'].notnull()) & \
+                     (drug_tcms['dosage'].notnull()) & \
+                    (drug_tcms['frequency'].notnull())]
+drug_tcms = drug_tcms.reset_index()
+del drug_tcms['index']
+
+print(drug_tcms.shape)  # (384,20)
+print(len(np.unique(drug_tcms['patient_id'])))  # 88
+
+# 长嘱他克莫司用药dosage数据处理。
+print('------------------ ----------------------------------')
+print(drug_tcms.columns)
+# 1)'粒'根据剂型转换为mg数值
+for i in range(drug_tcms.shape[0]):
+    if '粒' in drug_tcms.loc[i, 'dosage']:
+        num = drug_tcms.loc[i, 'dosage'].split('粒')[0]
+        one_w = drug_tcms.loc[i, 'drug_spec'].split('mg')[0]
+        drug_tcms.loc[i, 'dosage'] = str(float(one_w) * int(num))
+        continue
+    elif 'ml' in drug_tcms.loc[i,'dosage']:
+        drug_tcms.loc[i, 'dosage'] = 5
+        continue
+
+# 2）dosage去除mg
+drug_tcms['dosage'] = drug_tcms['dosage'].astype('str').apply(lambda x: x.replace('mg', '') if 'mg' in x else float(x.replace('g','')) *1000 if 'g' in x else 1)
+
+# 长嘱他克莫司用药异常频次dosage数据处理。处理'1/早','1/晚'为每日两次，去两次用药的平均dosage，频次改为每日两次(自定义)
+print('------------------他克莫司用药异常频次的dosage处理----------------------------------')
+aaa = drug_tcms[
+    (drug_tcms['frequency'].str.contains('1/早')) | (drug_tcms['frequency'].str.contains('1/晚'))]
+bbb = drug_tcms[
+    ~ (drug_tcms['frequency'].str.contains('1/早') | (drug_tcms['frequency'].str.contains('1/晚')))]
+# 创建start_datetime_dosage，以时间为根据分组，计算平均用药dosage，频次改为每日两次(自定义)
+aaa['start_datetime_dosage'] = aaa['start_datetime'].astype('str').apply(lambda x: x.split(' ')[0])
+
+# 根据patient_id和start_datetime_dosage，计算平均用药dosage。
+all_id = []
+for i in np.unique(aaa['patient_id']):
+    temp = aaa[aaa['patient_id'] == i]
+    temp = temp.reset_index(drop=True)
+    # 计算patient_id下，某一天的早/天、晚/天频次的平均用药
+    between_id = []
+    for j in np.unique(temp['start_datetime_dosage']):
+        temp_t = temp[temp['start_datetime_dosage'] == j]
+        temp_t['dosage'] = temp_t['dosage'].astype('float').mean()
+        between_id.append(temp_t)
+
+    # 将某一patient_id的所有不同时间内的异常频次用药合并
+    temp_between = between_id[0]
+    for k in range(1, len(between_id)):
+        temp_between = pd.concat([temp_between, between_id[k]], axis=0)  # 将groupby后的list类型转换成DataFrame
+    temp_between = temp_between.reset_index()
+    del temp_between['index']
+    all_id.append(temp_between)
+
+# 将所有patient_id下的异常频次用药合并
+temp_all = all_id[0]
+for k in range(1, len(all_id)):
+    temp_all = pd.concat([temp_all, all_id[k]], axis=0)
+temp_all['frequency'] = '每日两次(自定义)'
+temp_all = temp_all.reset_index()
+del temp_all['index']
+
+drug_tcms_dosage = pd.concat([temp_all, bbb], axis=0)
+# drug_tcms_dosage['start_datetime']=drug_tcms_dosage['start_datetime'].astype('str').apply(str_to_datatime)
+# 同一test_date下的他克莫司用药时间倒序
+drug_tcms_dosage = drug_tcms_dosage.sort_values(by=['patient_id', 'start_datetime'],ascending=[True, False])
+drug_tcms_dosage = drug_tcms_dosage.reset_index()
+del drug_tcms_dosage['index']
+del drug_tcms_dosage['start_datetime_dosage']
+
+print(drug_tcms_dosage.shape)  # (384,20)
+print(len(np.unique(drug_tcms_dosage['patient_id'])))  # 88
+
+writer = pd.ExcelWriter(project_path + '/result/df_3_他克莫司用药dosage处理.xlsx')
+drug_tcms_dosage.to_excel(writer)
+writer.save()
+
+# 他克莫司用药dosage处理，挪到15天间隔过滤前。因为在tdm检测15天间隔判断之后，删除许多数据，1/早、1/晚没法具体处理。
+# 他克莫司用药频次数字化处理
+print('------------------他克莫司用药frequency处理和日剂量----------------------------------')
+print(np.unique(drug_tcms_dosage['frequency']))
+one = ['1/单日', '1/日', '1/隔日', '1/午', 'ONCE']  # 周频次，改为0
+two = ['1/12小时', '2/日', '2/日(餐前)', '每日两次(自定义)']
+three = ['Tid']
+drug_tcms_dosage['frequency'] = drug_tcms_dosage['frequency'].astype('str').apply(
+    lambda x: 1 if x in one else 2 if x in two else 3 if x in three else 1)
+drug_tcms_dosage['日剂量'] = drug_tcms_dosage['frequency'] * drug_tcms_dosage['dosage'].astype('float')
+drug_tcms_frequency=drug_tcms_dosage[['patient_id','drug_name','drug_spec','dosage','frequency','日剂量','start_datetime','end_datetime']]
+# drug_tcms_frequency = drug_tcms_dosage[
+#     ['patient_id','long_d_order', 'drug_name', 'drug_spec', 'dosage', 'frequency', 'start_datetime', \
+#      'end_datetime', '日剂量','test_date', 'project_name', 'test_result', 'is_normal','gender','age','身高(cm)','体重(kg)','BMI']]
+
+print(drug_tcms_frequency.shape)  # (102,18)
+print(len(np.unique(drug_tcms_frequency['patient_id'])))  # 88
+# 去除他克莫司用药重复数据
+drug_tcms_frequency=drug_tcms_frequency.drop_duplicates(subset=['patient_id','日剂量','start_datetime'],keep='first')
+# 用药时间截止到天，将相同天的日剂量取平均
+drug_tcms_frequency['start_datetime_tcms']=drug_tcms_frequency['start_datetime'].astype('str').apply(lambda x: x.split(' ')[0])
+all_id=[]
+for i in np.unique(drug_tcms_frequency['patient_id']):
+    temp=drug_tcms_frequency[drug_tcms_frequency['patient_id']==i]
+    between_id=[]
+    for j in np.unique(temp['start_datetime_tcms']):
+        temp_time=temp[temp['start_datetime_tcms']==j]
+        temp_time['日剂量']=temp_time['日剂量'].mean()
+        between_id.append(temp_time)
+    temp_1=between_id[0]
+    for k in range(1,len(between_id)):
+        temp_1=pd.concat([temp_1,between_id[k]],axis=0)
+    all_id.append(temp_1)
+drug_tcms_frequency_r=all_id[0]
+for m in range(1,len(all_id)):
+    drug_tcms_frequency_r=pd.concat([drug_tcms_frequency_r,all_id[m]],axis=0)
+
+# 删除相同天的他克莫司平均日剂量重复数据
+drug_tcms_frequency_r=drug_tcms_frequency_r.drop_duplicates(subset=['patient_id','日剂量','start_datetime_tcms'],keep='first')
+drug_tcms_frequency_r=drug_tcms_frequency_r.drop(['start_datetime_tcms'],axis=1)
+drug_tcms_frequency_r=drug_tcms_frequency_r.reset_index(drop=True)
+writer = pd.ExcelWriter(project_path + '/result/df_4_他克莫司frequency处理和日剂量.xlsx')
+drug_tcms_frequency_r.to_excel(writer)
+writer.save()
+
+# 计算他克莫司用药的日剂量和上一次日剂量
+print('------------------计算他克莫司上一次日剂量----------------------------------')
+drug_tcms_frequency_r['start_datetime']=drug_tcms_frequency_r['start_datetime'].astype('str').apply(str_to_datatime)
+drug_tcms_frequency_r =drug_tcms_frequency_r.sort_values(by=['patient_id','start_datetime'],ascending=[True,False])
+drug_tcms_frequency_r=drug_tcms_frequency_r.reset_index(drop=True)
+all_id=[]
+for i in np.unique(drug_tcms_frequency_r['patient_id']):
+    temp=drug_tcms_frequency_r[drug_tcms_frequency_r['patient_id']==i]
+    temp = temp.reset_index(drop=True)
+    # 如果一个病人patient_id的用药时间记录大于1。则存在上一次他克莫司用药。双层循环时间太长
+    if temp['start_datetime'].nunique() > 1:
+        for j in range(temp['start_datetime'].nunique()):
+            if j+1 < temp['start_datetime'].nunique() and temp.loc[j,'start_datetime'] - datetime.timedelta(days=8) <= temp.loc[j+1,'start_datetime']:
+                temp.loc[j,'上一次日剂量']=temp.loc[j+1,'日剂量']
+            else:
+                temp.loc[j, '上一次日剂量'] = 0
+    all_id.append(temp)
+# 将list数据转化为DataFrame
+drug_tcms_frequency_l= all_id[0]
+for k in range(1,len(all_id)):
+    drug_tcms_frequency_l=pd.concat([drug_tcms_frequency_l,all_id[k]],axis=0)
+
+drug_tcms_frequency_l=drug_tcms_frequency_l.reset_index(drop=True)
+
+print(drug_tcms_frequency_l.shape)
+print(drug_tcms_frequency_l['patient_id'].nunique())
+
+writer = pd.ExcelWriter(project_path + '/result/df_5_计算他克莫司用药上一次日剂量.xlsx')
+drug_tcms_frequency_l.to_excel(writer)
+writer.save()
+
 # 合并自身免疫疾病病人的他克莫司用药和tdm检测数据
-drug_test_tcms = pd.merge(drug_tcms,test_record_result_tdm, on=['patient_id'], how='inner')
+print('----------------------合并自身免疫疾病病人的他克莫司用药和tdm检测数据------------------------------')
+drug_test_tcms = pd.merge(drug_tcms_frequency_l,test_record_result_tdm, on=['patient_id'], how='inner')
 # 时间字段要注意数据类型，有些时间字段为str，有些为timestamp，类型冲突会报错
-drug_test_tcms['start_datetime'] = drug_test_tcms['start_datetime'].apply(str_to_datatime)
-drug_test_tcms['test_date'] = drug_test_tcms['test_date'].apply(str_to_datatime)
+drug_test_tcms['start_datetime'] = drug_test_tcms['start_datetime'].astype('str').apply(str_to_datatime)
+drug_test_tcms['test_date'] = drug_test_tcms['test_date'].astype('str').apply(str_to_datatime)
 
 # end_datetime为空的数据赋值为start_datetime
 aaa = drug_test_tcms[drug_test_tcms['end_datetime'].isnull()]
@@ -130,7 +340,7 @@ drug_test_tcms['end_datetime'] = drug_test_tcms['end_datetime'].astype('str').ap
 print(drug_test_tcms.shape)  # (3125,15)
 print(len(np.unique(drug_test_tcms['patient_id'])))  # 149
 
-writer = pd.ExcelWriter(project_path + '/result/df_1_自身免疫病人的他克莫司用药和tdm检测数据.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_6_合并自身免疫病人的他克莫司用药和tdm检测数据.xlsx')
 drug_test_tcms.to_excel(writer)
 writer.save()
 
@@ -197,117 +407,54 @@ drug_test_tcms=pd.concat([bbb,temp_aaa],axis=0)
 drug_test_tcms['gender']=drug_test_tcms['gender'].astype('str').apply(lambda x: 0 if x=='女' else 1)
 drug_test_tcms = drug_test_tcms.reset_index(drop=True)
 
+# 插补缺失的身高、体重和BMI数据
+df_h_w=drug_test_tcms[['patient_id','gender','age','身高(cm)','体重(kg)','BMI']]
+df_h_w=missing_value_interpolation(df_h_w)
+drug_test_tcms=drug_test_tcms.drop(['gender','age','身高(cm)','体重(kg)','BMI'],axis=1)
+drug_test_tcms=pd.merge(drug_test_tcms,df_h_w,on=['patient_id'],how='left')
+drug_test_tcms=drug_test_tcms.drop_duplicates()
+drug_test_tcms=drug_test_tcms.reset_index(drop=True)
+
 print(drug_test_tcms.shape)  # (3125,20)
 print(len(np.unique(drug_test_tcms['patient_id'])))  # 149
 
-writer = pd.ExcelWriter(project_path + '/result/df_2_补充自身免疫病人的身高体重数据.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_7_补充自身免疫病人的身高体重数据.xlsx')
 drug_test_tcms.to_excel(writer)
 writer.save()
 
-
 # 需求2.2：tdm检测前7天内他克莫司用药筛选，注意他克莫司用药不能和tdm检测在同一天，一定要提前1天！！！
 # 但可能有长时间用药和短时用药。根据反集规则，在(tdm-7, tdm)这段时间区间内，能落到这段时间的他克莫司用药只需满足:end_time>tdm-7 & start_time<tdm
-print('------------------tdm检测前7天内他克莫司用药筛选-------------------------------')
-drug_test_tcms_7 = drug_test_tcms[(drug_test_tcms['test_date'] - datetime.timedelta(days=15) <= drug_test_tcms['end_datetime'])&
-                                  (drug_test_tcms['start_datetime'] <= drug_test_tcms['test_date'] - datetime.timedelta(days=1))]
-# 检测时间test_date升序，用药时间start_datetime降序，方便后面7-15天筛选。这样选出来是第一条tdm检测和最后一次用药。
-drug_test_tcms_7 = drug_test_tcms_7.sort_values(by=['patient_id', 'test_date', 'start_datetime'],
+print('------------------tdm检测前7天内有他克莫司用药-------------------------------')
+drug_test_tcms = drug_test_tcms.sort_values(by=['patient_id', 'test_date', 'start_datetime'],
                                                 ascending=[True, True, False])
-drug_test_tcms_7 = drug_test_tcms_7.reset_index()
-del drug_test_tcms_7['index']
+drug_test_tcms = drug_test_tcms.reset_index(drop=True)
 
-print(drug_test_tcms_7.shape)  # 7天，(384,20)；
-print(len(np.unique(drug_test_tcms_7['patient_id'])))  # 88
+drug_test_tcms_frequency = drug_test_tcms[(drug_test_tcms['test_date'] - datetime.timedelta(days=15) <= drug_test_tcms['end_datetime'])&
+                                  (drug_test_tcms['start_datetime'] <= drug_test_tcms['test_date'] - datetime.timedelta(days=1))]
 
-writer = pd.ExcelWriter(project_path + '/result/df_3_tdm检测前7天的他克莫司用药数据.xlsx')
-drug_test_tcms_7.to_excel(writer)
+drug_test_tcms_frequency = drug_test_tcms_frequency.reset_index()
+del drug_test_tcms_frequency['index']
+
+print(drug_test_tcms_frequency.shape)  # 7天，(384,20)；
+print(len(np.unique(drug_test_tcms_frequency['patient_id'])))  # 88
+
+drug_test_tcms_frequency =drug_test_tcms_frequency.sort_values(by=['patient_id','start_datetime'],ascending=[True,False])
+drug_test_tcms_frequency=drug_test_tcms_frequency.reset_index(drop=True)
+
+writer = pd.ExcelWriter(project_path + '/result/df_8_tdm检测前7天的他克莫司用药数据.xlsx')
+drug_test_tcms_frequency.to_excel(writer)
 writer.save()
 
-# 他克莫司用药dosage处理。因为在两次tdm检测7-15天间隔判断之后，很多数据被删除，1/早、1/晚频次的dosage没法计算平均值。
-print('------------------删除他克莫司用药dosage、frequency空值----------------------------------')
-
-# 删除频次、剂型、剂量为空的样本
-drug_test_tcms_7 = drug_test_tcms_7[(drug_test_tcms_7['drug_spec'].notnull()) & \
-                                        (drug_test_tcms_7['dosage'].notnull()) & \
-                                        (drug_test_tcms_7['frequency'].notnull())]
-drug_test_tcms_7 = drug_test_tcms_7.reset_index()
-del drug_test_tcms_7['index']
-
-print(drug_test_tcms_7.shape)  # (384,20)
-print(len(np.unique(drug_test_tcms_7['patient_id'])))  # 88
-
-# 长嘱他克莫司用药dosage数据处理。
-print('------------------他克莫司用药dosage数字化处理----------------------------------')
-print(drug_test_tcms_7.columns)
-# 1)'粒'根据剂型转换为mg数值
-for i in range(drug_test_tcms_7.shape[0]):
-    if '粒' in drug_test_tcms_7.loc[i, 'dosage']:
-        num = drug_test_tcms_7.loc[i, 'dosage'].split('粒')[0]
-        one_w = drug_test_tcms_7.loc[i, 'drug_spec'].split('mg')[0]
-        drug_test_tcms_7.loc[i, 'dosage'] = str(float(one_w) * int(num))
-
-# 2）dosage去除mg
-drug_test_tcms_7['dosage'] = drug_test_tcms_7['dosage'].astype('str').apply(lambda x: x.replace('mg', ''))
-
-# 长嘱他克莫司用药异常频次dosage数据处理。处理'1/早','1/晚'为每日两次，去两次用药的平均dosage，频次改为每日两次(自定义)
-print('------------------他克莫司用药异常频次的dosage处理----------------------------------')
-aaa = drug_test_tcms_7[
-    (drug_test_tcms_7['frequency'].str.contains('1/早')) | (drug_test_tcms_7['frequency'].str.contains('1/晚'))]
-bbb = drug_test_tcms_7[
-    ~ (drug_test_tcms_7['frequency'].str.contains('1/早') | (drug_test_tcms_7['frequency'].str.contains('1/晚')))]
-# 创建start_datetime_dosage，以时间为根据分组，计算平均用药dosage，频次改为每日两次(自定义)
-aaa['start_datetime_dosage'] = aaa['start_datetime'].astype('str').apply(lambda x: x.split(' ')[0])
-
-# 根据patient_id和start_datetime_dosage，计算平均用药dosage。
-all_id = []
-for i in np.unique(aaa['patient_id']):
-    temp = aaa[aaa['patient_id'] == i]
-    temp = temp.reset_index()
-    del temp['index']
-    # 计算patient_id下，某一天的早/天、晚/天频次的平均用药
-    between_id = []
-    for j in np.unique(temp['start_datetime_dosage']):
-        temp_t = temp[temp['start_datetime_dosage'] == j]
-        temp_t['dosage'] = temp_t['dosage'].astype('float').mean()
-        between_id.append(temp_t)
-
-    # 将某一patient_id的所有不同时间内的异常频次用药合并
-    temp_between = between_id[0]
-    for k in range(1, len(between_id)):
-        temp_between = pd.concat([temp_between, between_id[k]], axis=0)  # 将groupby后的list类型转换成DataFrame
-    temp_between = temp_between.reset_index()
-    del temp_between['index']
-    all_id.append(temp_between)
-
-# 将所有patient_id下的异常频次用药合并
-temp_all = all_id[0]
-for k in range(1, len(all_id)):
-    temp_all = pd.concat([temp_all, all_id[k]], axis=0)
-temp_all['frequency'] = '每日两次(自定义)'
-temp_all = temp_all.reset_index()
-del temp_all['index']
-
-drug_test_tcms_dosage = pd.concat([temp_all, bbb], axis=0)
-# drug_test_tcms_dosage['start_datetime']=drug_test_tcms_dosage['start_datetime'].astype('str').apply(str_to_datatime)
-# 同一test_date下的他克莫司用药时间倒序
-drug_test_tcms_dosage = drug_test_tcms_dosage.sort_values(by=['patient_id', 'test_date', 'start_datetime'],ascending=[True, True, False])
-drug_test_tcms_dosage = drug_test_tcms_dosage.reset_index()
-del drug_test_tcms_dosage['index']
-del drug_test_tcms_dosage['start_datetime_dosage']
-
-print(drug_test_tcms_dosage.shape)  # (384,20)
-print(len(np.unique(drug_test_tcms_dosage['patient_id'])))  # 88
-
-writer = pd.ExcelWriter(project_path + '/result/df_4_他克莫司dosage处理.xlsx')
-drug_test_tcms_dosage.to_excel(writer)
-writer.save()
 
 # 2.2同一位病人两次TDM检测间隔时间主要分布在15天内，取第一次tdm检测；如果间隔在15天以上，可以认为每个样本相互独立。因为7天间隔的话，两次他克莫司用药间隔可能小于7天。
 print('------------------同一位病人两次TDM检测间隔15天判断----------------------------------')
-drug_test_tcms_dosage['test_date']=drug_test_tcms_dosage['test_date'].astype('str').apply(str_to_datatime)
+# 检测时间test_date升序，用药时间start_datetime降序，方便后面7-15天筛选。这样选出来是第一条tdm检测和最后一次用药。
+drug_test_tcms_frequency = drug_test_tcms_frequency.sort_values(by=['patient_id', 'test_date', 'start_datetime'],
+                                                ascending=[True, True, False])
+drug_test_tcms_frequency['test_date']=drug_test_tcms_frequency['test_date'].astype('str').apply(str_to_datatime)
 all_id = []
-for i in np.unique(drug_test_tcms_dosage['patient_id']):
-    temp = drug_test_tcms_dosage[drug_test_tcms_dosage['patient_id'] == i]
+for i in np.unique(drug_test_tcms_frequency['patient_id']):
+    temp = drug_test_tcms_frequency[drug_test_tcms_frequency['patient_id'] == i]
     temp = temp.reset_index()
     del temp['index']
     between_id = []
@@ -343,7 +490,7 @@ del drug_test_tcms_15['index']
 print(drug_test_tcms_15.shape)  # 7天，(102,20)；
 print(len(np.unique(drug_test_tcms_15['patient_id'])))  # 88
 
-writer = pd.ExcelWriter(project_path + '/result/df_5_两次他克莫司检测间隔15天判断.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_9_两次他克莫司检测间隔15天判断.xlsx')
 drug_test_tcms_15.to_excel(writer)
 writer.save()
 '''
@@ -367,29 +514,6 @@ writer = pd.ExcelWriter(project_path + '/result/df_6_他克莫司长嘱用药.xl
 drug_test_tcms_long.to_excel(writer)
 writer.save()
 '''
-# 他克莫司用药dosage处理，挪到15天间隔过滤前。因为在tdm检测15天间隔判断之后，删除许多数据，1/早、1/晚没法具体处理。
-# 他克莫司用药频次数字化处理
-print('------------------他克莫司用药frequency处理----------------------------------')
-print(np.unique(drug_test_tcms_15['frequency']))
-one = ['1/单日', '1/日', '1/隔日', '1/午', 'ONCE']  # 周频次，改为0
-two = ['1/12小时', '2/日', '2/日(餐前)', '每日两次(自定义)']
-three = ['Tid']
-drug_test_tcms_15['frequency'] = drug_test_tcms_15['frequency'].astype('str').apply(
-    lambda x: 1 if x in one else 2 if x in two else 3 if x in three else 0)
-drug_test_tcms_15['日剂量'] = drug_test_tcms_15['frequency'] * drug_test_tcms_15['dosage'].astype('float')
-
-drug_test_tcms_frequency = drug_test_tcms_15[
-    ['patient_id','long_d_order', 'drug_name', 'drug_spec', 'dosage', 'frequency', 'start_datetime', \
-     'end_datetime', '日剂量','test_date', 'project_name', 'test_result', 'is_normal','gender','age','身高(cm)','体重(kg)','BMI']]
-
-drug_test_tcms_frequency['test_result'] = drug_test_tcms_frequency['test_result'].astype('str').apply(lambda x: re.sub(r'<|>', '',x))
-
-print(drug_test_tcms_frequency.shape)  # (102,18)
-print(len(np.unique(drug_test_tcms_frequency['patient_id'])))  # 88
-
-writer = pd.ExcelWriter(project_path + '/result/df_7_他克莫司frequency处理.xlsx')
-drug_test_tcms_frequency.to_excel(writer)
-writer.save()
 
 #  需求4：提取他克莫司TDM检测7天之内的最后的一次其他检验指标
 #  4.1，先根据patient_id进行第一次数据分组，再根据tdm_time进行第二次数据分组，对DataFrame转换的数据进行时间排序，筛选tdm前7天内的其他检测。
@@ -400,11 +524,13 @@ writer.save()
 #  其中，相关性分析: 分类变量(二分类，Mann-Whitney U test;多分类，方差分析-统计量F); 连续变量，pearson相关性检验(统计量r);
 #  4.6，提取重要的指标，然后用随机森林进行缺失值插补。
 print('---------------------4.提取他克莫司TDM检测7天之内的最后一次其他检验指标--------------------')
+drug_test_tcms_15['test_result'] = drug_test_tcms_15['test_result'].astype('str').apply(lambda x: re.sub(r'<|>', '',x))
+
 # print(np.unique(test_record_result['project_name']))
 all_id = []
-for i in np.unique(drug_test_tcms_frequency['patient_id']):
+for i in np.unique(drug_test_tcms_15['patient_id']):
     # 根据patient_id进行第一次分类
-    tdm_time = drug_test_tcms_frequency[drug_test_tcms_frequency['patient_id'] == i]  # 他克莫司的tdm检测数据
+    tdm_time = drug_test_tcms_15[drug_test_tcms_15['patient_id'] == i]  # 他克莫司的tdm检测数据
     # 检测时间排序
     tdm_time = tdm_time.sort_values(by=['test_date'], ascending=True)
     tdm_time = tdm_time.reset_index()
@@ -467,7 +593,7 @@ del tdm_7_other['index']
 print(tdm_7_other.shape)  # (102,500)
 print(len(np.unique(tdm_7_other['patient_id'])))  # 88
 
-writer = pd.ExcelWriter(project_path + '/result/df_8_提取tdm检测7天内最近的一次其他检测.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_10_提取tdm检测7天内最近的一次其他检测.xlsx')
 tdm_7_other.to_excel(writer)
 writer.save()
 
@@ -488,7 +614,8 @@ print(len(np.unique(tdm_7_other_filter['patient_id'])))  # 88
 
 # 4.4.2，删除分类严重不平衡的其他检测指标, 即分类变量中，如果某一变量占比超过90%，则认为该指标分类不平衡，删除
 # 其中其他检测指标是从第19列开始的
-column_list = list(tdm_7_other_filter.columns)[18:]
+index = list(tdm_7_other_filter.columns).index('BMI')
+column_list = list(tdm_7_other_filter.columns)[index+1:]
 for field in column_list:  # i in list可能发生列表元素丢失，不能完全遍历
     # 提取指标数据
     df_temp = tdm_7_other_filter[tdm_7_other_filter[field].notnull()]
@@ -512,7 +639,7 @@ print(len(np.unique(tdm_7_other_filter['patient_id'])))  # 88
 # 4.4.3，人工删除无意义的其他检测指标，试带法初筛变量也不要
 # 删除离子、百分数
 for i in tdm_7_other_filter.columns:  # i in list可能发生列表元素丢失，不能完全遍历
-    if '总数' in i or '离子' in i or '无机磷' in i:
+    if '离子' in i or '无机磷' in i:
         tdm_7_other_filter.drop(columns=[i],inplace=True)
         continue
     elif '宽度' in i or '体积' in i or '时间' in i:
@@ -521,7 +648,7 @@ for i in tdm_7_other_filter.columns:  # i in list可能发生列表元素丢失�
     elif '比值' in i or '比率' in i or '比积' in i or '容积' in i:
         tdm_7_other_filter.drop(columns=[i], inplace=True)
         continue
-    elif '仪器定量' in i or '试带法初筛' in i or '拆射计法' in i:
+    elif '试带法初筛' in i or '拆射计法' in i: # '仪器定量' in i or
         tdm_7_other_filter.drop(columns=[i], inplace=True)
         continue
     elif 'Status' in i or '透明度' in i or '颜色' in i or '等级' in i:
@@ -530,7 +657,7 @@ for i in tdm_7_other_filter.columns:  # i in list可能发生列表元素丢失�
 print(tdm_7_other_filter.shape)  # (106,92)
 print(len(np.unique(tdm_7_other_filter['patient_id'])))  # 88
 
-writer = pd.ExcelWriter(project_path + '/result/df_9_tdm检测7天内最近的一次其他检测指标预处理.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_11_tdm检测7天内最近的一次其他检测指标预处理.xlsx')
 tdm_7_other_filter.to_excel(writer)
 writer.save()
 
@@ -538,7 +665,8 @@ writer.save()
 #  其中，相关性分析: 分类变量(二分类，Mann-Whitney U test;多分类，方差分析-统计量F); 连续变量，pearson相关性检验(统计量r);
 print('---------------------他克莫司TDM检测7天内的其他检验指标的相关性检验--------------------')
 # 获取变量列表，本案例从18开始
-variance_list = list(tdm_7_other_filter.columns)[18:]
+index = list(tdm_7_other_filter.columns).index('BMI')
+variance_list = list(tdm_7_other_filter.columns)[index+1:]
 discrete_list=[]
 continuous_list=[]
 # 区分分类变量和连续变量
@@ -593,7 +721,7 @@ output_mann=output_mann.sort_values(by=['p值'],ascending=True)
 output_mann = df_mann.reset_index()
 del output_mann['index']
 
-writer = pd.ExcelWriter(project_path + '/result/df_10_其他检测指标分类变量的Mann-Whitney U test.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_12_其他检测指标分类变量的Mann-Whitney U test.xlsx')
 output_mann.to_excel(writer)
 writer.save()
 
@@ -607,12 +735,13 @@ print(len(np.unique(tdm_7_other_filter['patient_id'])))  # 88
 
 #  连续变量，pearson相关性检验(统计量r);
 print('--------------------------计算连续变量的spearson相关性系数---------------------------------')
-# # 删除行缺失50%的数据，其他检测指标是从第19列开始的
+# 删除行缺失50%的数据，其他检测指标是从第19列开始的
+# index = list(tdm_7_other_filter.columns).index('BMI') + 1
 # tdm_7_other_filter=tdm_7_other_filter.reset_index(drop=True)
 # for i in range(tdm_7_other_filter.shape[0]):
-#     other_up = tdm_7_other_filter.iloc[i,18:].isnull().sum()
-#     other_down = tdm_7_other_filter.shape[1] - 18
-#     if other_up/other_down >=0.5:
+#     other_up = tdm_7_other_filter.iloc[i,index:].isnull().sum()
+#     other_down = tdm_7_other_filter.shape[1] - index
+#     if other_up ==other_down:
 #         tdm_7_other_filter.drop([i], inplace=True)
 # tdm_7_other_filter.reset_index(drop=True)
 
@@ -647,7 +776,7 @@ df_spearmanr=df_spearmanr.sort_values(by=['p值'],ascending=True)
 df_spearmanr = df_spearmanr.reset_index()
 del df_spearmanr['index']
 
-writer = pd.ExcelWriter(project_path + '/result/df_10_其他检测指标连续变量的spearmanr相关性检测.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_12_其他检测指标连续变量的spearmanr相关性检测.xlsx')
 df_spearmanr.to_excel(writer)
 writer.save()
 
@@ -665,59 +794,18 @@ for i in list(np.unique(df_spearmanr_2['连续检测指标'])):
     del tdm_7_other_filter[i]
 
 print(tdm_7_other_filter.shape)  # (106,21)
-writer = pd.ExcelWriter(project_path + '/result/df_11_相关性检测过滤后的其他检测指标.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_13_相关性检测过滤后的其他检测指标.xlsx')
 tdm_7_other_filter.to_excel(writer)
 writer.save()
 
 #  4.6，用随机森林对提取的重要指标进行缺失值插补。
 print('------------------------用随机森林对重要的其他检测指标缺失值进行插补---------------------------------')
-# 使用随机森林进行插补
-import pandas as pd
-pd.set_option('mode.chained_assignment', None)
-import numpy as np
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import GridSearchCV
 
-def missing_value_interpolation(df):
-    df = df.reset_index(drop=True)
-    # 提取存在缺失值的列名
-    missing_list = []
-    for i in df.columns:
-        if df[i].isnull().sum() > 0:
-            missing_list.append(i)
-    missing_list_copy = missing_list.copy()
-    # 用该列未缺失的值训练随机森林，然后用训练好的rf预测缺失值
-    for i in range(len(missing_list)):
-        name=missing_list[0]
-        df_missing = df[missing_list_copy]
-        # 将其他列的缺失值用0表示。
-        missing_list.remove(name)
-        for j in missing_list:
-            df_missing[j]=df_missing[j].astype('str').apply(lambda x: 0 if x=='nan' else x)
-        df_missing_is = df_missing[df_missing[name].isnull()]
-        df_missing_not = df_missing[df_missing[name].notnull()]
-        y = df_missing_not[name]
-        x = df_missing_not.drop([name],axis=1)
-        # 列出参数列表
-        tree_grid_parameter = {'n_estimators': list((10, 50, 100, 150, 200))}
-        # 进行参数的搜索组合
-        grid = GridSearchCV(RandomForestRegressor(),param_grid=tree_grid_parameter,cv=3)
-        #rfr=RandomForestRegressor(random_state=0,n_estimators=100,n_jobs=-1)
-        #根据已有数据去拟合随机森林模型
-        grid.fit(x, y)
-        rfr = RandomForestRegressor(n_estimators=grid.best_params_['n_estimators'])
-        rfr.fit(x, y)
-        #预测缺失值
-        predict = rfr.predict(df_missing_is.drop([name],axis=1))
-        #填补缺失值
-        df.loc[df[name].isnull(),name] = predict
-    return df
-
-tdm_7_other_filter = pd.read_excel(project_path + '/result/df_11_相关性检测过滤后的其他检测指标.xlsx')
+tdm_7_other_filter = pd.read_excel(project_path + '/result/df_13_相关性检测过滤后的其他检测指标.xlsx')
 tdm_7_other_filter = tdm_7_other_filter.drop(['Unnamed: 0'],axis=1)
-tdm_7_other_interpolation=tdm_7_other_filter
-# tdm_7_other_interpolation =missing_value_interpolation(tdm_7_other_filter)
-writer = pd.ExcelWriter(project_path + '/result/df_12_其他检测指标变量缺失值插补.xlsx')
+# tdm_7_other_interpolation=tdm_7_other_filter
+tdm_7_other_interpolation =missing_value_interpolation(tdm_7_other_filter)
+writer = pd.ExcelWriter(project_path + '/result/df_14_其他检测指标变量缺失值插补.xlsx')
 tdm_7_other_interpolation.to_excel(writer)
 writer.save()
 
@@ -735,8 +823,7 @@ print(tdm_7_other_interpolation['patient_id'].nunique())  # 88
 # 5.1为避免无法分辨不同tdm检测时间前的其他用药，先对其他用药数据进行提取和处理
 # 糖皮质激素、质子泵抑制剂、钙离子阻抗剂、其他免疫抑制剂、克拉霉素、阿奇霉素
 doctor_order = pd.read_csv(project_path + '/data/df_doctor_order.csv')
-doctor_order = doctor_order[[ 'patient_id', 'long_d_order', 'drug_name', 'amount', \
-                             'drug_spec', 'dosage', 'frequency', 'start_datetime', 'end_datetime']]
+doctor_order = doctor_order[[ 'patient_id', 'drug_name', 'drug_spec', 'dosage', 'frequency', 'start_datetime', 'end_datetime']]
 # 删除start_time、dosage和frequency为空的他克莫司用药数据
 doctor_order=doctor_order[doctor_order['dosage'].notnull() & doctor_order['frequency'].notnull()&doctor_order['start_datetime'].notnull()]
 
@@ -849,7 +936,7 @@ drug_other['end_datetime'] = drug_other['end_datetime'].astype('str').apply(str_
 # print(drug_other.shape)  # (19728,9)
 # print(drug_other['patient_id'].nunique())  # 948
 
-writer = pd.ExcelWriter(project_path + '/result/df_13_其他联合用药数据.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_15_其他联合用药数据.xlsx')
 drug_other.to_excel(writer)
 writer.save()
 
@@ -930,13 +1017,13 @@ for i in np.unique(df_data_modeling.columns):
 print(df_data_modeling.shape)  # (106,23)
 print(len(np.unique(df_data_modeling['patient_id'])))  # 88
 
-writer = pd.ExcelWriter(project_path + '/result/df_14_提取tdm检测7天内最近的其他联合用药.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_16_提取tdm检测7天内最近的其他联合用药.xlsx')
 df_data_modeling.to_excel(writer)
 writer.save()
 
 # 对其他联合用药进行插补
-# df_data_modeling=missing_value_interpolation(df_data_modeling)
+df_data_modeling=missing_value_interpolation(df_data_modeling)
 
-writer = pd.ExcelWriter(project_path + '/result/df_15_插补tdm检测7天内最近的其他联合用药.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_17_插补tdm检测7天内最近的其他联合用药.xlsx')
 df_data_modeling.to_excel(writer)
 writer.save()
