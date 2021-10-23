@@ -14,6 +14,7 @@ import statsmodels.api as sm
 from sklearn.linear_model import Lasso
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import r2_score
+from sklearn.metrics import mean_squared_error  # 均方误差
 
 import catboost,xgboost
     
@@ -32,39 +33,50 @@ def feature_select_forward(df_model):
     # 保存每次迭代中选出的最佳特征及其当前最佳特征组合r2
     best_feature=[]
     best_r2=[]
+    best_mse=[]
+    best_rmse=[]
     # 利用while循环控制特征个数
     i=1
     while i <= len(feature_list_copy):
         record_feature=[] # 记录测试的特征组合
         record_r2=[]  # 记录测试的特征组合的r2
+        record_mse=[]
+        record_rmse=[]
         # 用for循环控制模型训练轮数
         for j in feature_list:
             feature_test=best_feature.copy()
             feature_test.append(j)
             df_feature=tran_x[feature_test]
             # 训练catboost模型
-            model = catboost.CatBoostRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE', random_state=3)
-            # model = xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE', random_state=3)
+            # model = catboost.CatBoostRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE', random_state=3)
+            model = xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE', random_state=3)
             model.fit(df_feature, tran_y)
             # 评价模型性能
             predictions=model.predict(test_x[feature_test])  # xgboost需要变量名称相同
             r2=r2_score(test_y,predictions)
+            mse = mean_squared_error(test_y, predictions)
+            rmse = mse ** 0.5
             # 记录特征搭配及其相应的r2
             record_feature.append(feature_test)
             record_r2.append(r2)
+            record_mse.append(mse)
+            record_rmse.append(rmse)
         # 评估特征搭配
         r2_max = max(record_r2)
         r2_max_index = record_r2.index(r2_max)
         feature_test_max = record_feature[r2_max_index]
-        # 保存本轮迭代选出的最佳单个特征及最优特征组合r2
+        # 保存本轮迭代选出的最佳单个特征及最优特征组合r2、MSE和RMSE
         best_feature = feature_test_max
         best_r2.append(r2_max)
+        best_mse.append(mse)
+        best_rmse.append(rmse)
+
         # 从测试特征中删除当前最优单个特征
         feature_list.remove(best_feature[-1])
 
         i +=1
     # 保存模型测试和测试结果到本地文件
-    df_feature_test=pd.DataFrame({'特征':best_feature,'r2':best_r2})
+    df_feature_test=pd.DataFrame({'特征':best_feature,'r2':best_r2,'MSE':best_mse,'RMSE':best_rmse})
     writer = pd.ExcelWriter(project_path + '/result/df_逐步向前特征测试结果.xlsx')
     df_feature_test.to_excel(writer)
     writer.save()

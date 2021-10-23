@@ -12,6 +12,7 @@ import numpy as np
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV
 
+'''
 # 读取津源建模数据
 df_model = pd.read_excel(project_path + '/data/data_model_from_jinyuan.xlsx')
 # df_model = df_model.drop(['Unnamed: 0'], axis=1)
@@ -102,4 +103,15 @@ print('中性粒细胞总数_检测结果',n_6)
 # 统计球蛋白
 n_8=df_model['高密度脂蛋白胆固醇_检测结果'].describe()
 print('高密度脂蛋白胆固醇_检测结果',n_8)
+'''
+# 统计模型在测试集上的预测结果
+df_model = pd.read_excel(project_path + '/result/df_18_他克莫司TDM模型测试结果.xlsx')
+df_model['预测准确率']=(df_model['真实值']-df_model['预测值'])/df_model['真实值']
+df_model['预测准确率']=df_model['预测准确率'].apply(lambda x:abs(x))
+df_model_10=df_model[df_model['预测准确率'] <=0.1]
+df_model_20=df_model[df_model['预测准确率'] <=0.2]
+df_model_30=df_model[df_model['预测准确率'] <=0.3]
 
+print(df_model_10.shape[0],df_model_10.shape[0]/df_model.shape[0])
+print(df_model_20.shape[0],df_model_20.shape[0]/df_model.shape[0])
+print(df_model_30.shape[0],df_model_30.shape[0]/df_model.shape[0])

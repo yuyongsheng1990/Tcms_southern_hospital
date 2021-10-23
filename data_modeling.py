@@ -25,10 +25,16 @@ def mkdir(path):
 
 def main():
     print('--------------------读取数据------------------------------')
-    df_model = pd.read_excel(project_path + '/result/df_17_建模数据集(插补).xlsx')
-    df_model = df_model.drop(['Unnamed: 0'], axis=1)
+    df_model=pd.read_excel(project_path + '/data/data_model_from_jinyuan.xlsx')
+    # feature_list=['TDM检测结果','年龄','直接胆红素_检测结果','白/球比值_检测结果','钙离子阻抗剂','转氨酶比值_检测结果',
+    #               '丙氨酸氨基转移酶_检测结果','平均RBC血红蛋白浓度_检测结果','肌酸激酶_检测结果','总胆红素_检测结果','心型肌酸激酶_检测结果',
+    #               'gender','他克莫司日剂量','他克莫司频次','其他免疫抑制剂','活化部分凝血活酶时间_检测结果','糖皮质激素',
+    #         '低密度脂蛋白胆固醇_检测结果','平均红细胞体积_检测结果','间接胆红素_检测结果','白蛋白_检测结果','总蛋白_检测结果','质子泵']
+    # df_model=df_model[feature_list]
+    # df_model = pd.read_excel(project_path + '/result/df_17_建模数据集(插补).xlsx')
+    # df_model = df_model.drop(['Unnamed: 0'], axis=1)
     # 重新排序建模数据集df_model顺序
-    df_model=df_model.sort_values(by=['test_result'],ascending=True)
+    df_model=df_model.sort_values(by=['TDM检测结果'],ascending=True)
     df_model=df_model.reset_index(drop=True)
     print(df_model.shape)
     print(df_model.columns)
@@ -36,9 +42,9 @@ def main():
     print('-------------------------划分数据集---------------------------')
     from auto_ml import Predictor
     # 划分训练集和测试集，比例为8:2
-    x = df_model.drop(['test_result'],axis=1)
-    y = df_model['test_result']
-    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
+    x = df_model.drop(['TDM检测结果'],axis=1)
+    y = df_model['TDM检测结果']
+    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.2, random_state=5)
 
     print('-------------------------训练模型---------------------------')
     '''
@@ -55,28 +61,29 @@ def main():
     predictions = ml_predictor.predict(test_x)
     # print(predictions)
     '''
+
     # 直接使用xgboost和catboost包，而不是auto_ml
     import xgboost
+    import lightgbm
     import catboost
     from sklearn.metrics import r2_score
-
     # XGBoost模型
-    # xgb_model=xgboost.XGBRegressor()
+    xgb_model=xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
+    # LightGBM模型
+    # xgb_model=lightgbm.LGBMRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     # CatBoost模型
-    xgb_model=catboost.CatBoostRegressor(iterations=300,learning_rate=0.2,loss_function='RMSE',random_state=3)
+    # xgb_model=catboost.CatBoostRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     xgb_model.fit(tran_x,tran_y)
     predictions=xgb_model.predict(test_x)
     # print(predictions)
     r2 = r2_score(test_y, predictions)
     print(r2)
+
     '''
     # 随机森林，GBDT
     from sklearn.ensemble import RandomForestRegressor,GradientBoostingRegressor
     from sklearn.model_selection import GridSearchCV
-
-    x = df_model.drop(['test_result'],axis=1)
-    y = df_model['test_result']
-    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
+    
     # 列出参数列表
     tree_grid_parameter = {'n_estimators': list((10, 50, 100, 150, 200))}
     # 进行参数的搜索组合
@@ -93,20 +100,13 @@ def main():
     '''
     # SVR
     from sklearn.svm import SVR
-    x = df_model.drop(['test_result'],axis=1)
-    y = df_model['test_result']
-    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
     svr = SVR(kernel='linear', C=1.25)
     svr.fit(tran_x,tran_y)
     predictions=svr.predict(test_x)
     '''
-    ''' 
+    '''
     # KNN训练
     from sklearn.neighbors import KNeighborsRegressor
-    # 划分训练集和测试集，比例为8:2
-    x = df_model.drop(['test_result'],axis=1)
-    y = df_model['test_result']
-    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
     knn = KNeighborsRegressor()
     knn.fit(tran_x,tran_y)
     predictions=knn.predict(test_x)
@@ -114,14 +114,11 @@ def main():
     '''
     # Linear回归，Lasso回归，领回归
     from sklearn.linear_model import LinearRegression,Lasso,Ridge
-    # 划分训练集和测试集，比例为8:2
-    x = df_model.drop(['test_result'], axis=1)
-    y = df_model['test_result']
-    tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
     lcv = Ridge()
     lcv.fit(tran_x, tran_y)
     predictions = lcv.predict(test_x)
     '''
+
     # 计算R2和均方误差MSE
     print('-----------------------计算R2和均方误差MSE---------------------------')
 
@@ -131,17 +128,16 @@ def main():
     # 调用
 
     r2 = r2_score(test_y,predictions)
-    print(r2)
+    print('r2: ',r2)
     mse=mean_squared_error(test_y,predictions)
-    print(mse)
+    print('MSE: ',mse)
     mae=mean_absolute_error(test_y,predictions)
-    print(mae)
+    print('MAE: ',mae)
 
     df_predictions= pd.DataFrame(data={'真实值':test_y,'预测值':predictions})
     writer = pd.ExcelWriter(project_path + '/result/df_18_他克莫司TDM模型测试结果.xlsx')
     df_predictions.to_excel(writer)
     writer.save()
-
 
     # 画图
     print('-----------------------画图---------------------------')
@@ -173,6 +169,7 @@ def main():
     # linewidth为点的大小
     # plt.scatter(range(len(test_y)),test_y,c='r')
     plt.scatter(test_y,predictions,c='b')
+    # 红色参照线
     plt.plot(list(range(test_y.shape[0])), list(range(test_y.shape[0])),color='r')
     plt.xlabel('Number of Events(unit)')
     plt.ylabel('Tac TDM CONC.')
@@ -180,19 +177,24 @@ def main():
     # 判断图片保存路径是否存在，否则创建
     jpg_path = project_path + "/jpg"
     mkdir(jpg_path)
-    plt.savefig(jpg_path + "/他克莫司血药浓度测试集折线图_15_15_is.jpg", dpi=300)
+    plt.savefig(jpg_path + "/他克莫司血药浓度测试集折线图v2.0.jpg", dpi=300)
     plt.clf()  # 删除前面所画的图
     '''
     '''
     # 重要性
-    from catboost import CatBoostRegressor
-    model_boost=CatBoostRegressor()
-    tran_x=tran_x.drop(['test_result'],axis=1)
+    import catboost,xgboost
+    model_boost=xgboost.XGBRegressor()
     model_boost.fit(tran_x,tran_y)
     importance = model_boost.feature_importances_
     print(tran_x.columns)
     print(importance)
-    '''
+
+    df_importance= pd.DataFrame(data={'特征':tran_x.columns,'重要性评分':importance})
+    df_importance=df_importance.sort_values(['重要性评分'],ascending=False)
+    df_importance=df_importance.reset_index(drop=True)
+    writer = pd.ExcelWriter(project_path + '/result/df_19_模型重要性评分.xlsx')
+    df_importance.to_excel(writer)
+    writer.save()
 
     # SHAP图
     from pylab import mpl
@@ -205,14 +207,16 @@ def main():
     import shap
     shap.initjs()  # notebook环境下，加载用于可视化的JS代码
 
-    shap_model = xgb.XGBRegressor(max_depth=4, learning_rate=0.05, n_estimators=150)
+    importance_list_10 = list(df_importance['特征'])[:10]
+    tran_x=tran_x[importance_list_10]
+    shap_model = xgb.XGBRegressor(max_depth=4, learning_rate=0.05, n_estimators=300)
     shap_model.fit(tran_x, tran_y)
 
     explainer = shap.TreeExplainer(shap_model)
     shap_values = explainer.shap_values(tran_x)  # 传入特征矩阵X，计算SHAP值
     print(shap_values)
     # summarize the effects of all the features
-    shap.summary_plot(shap_values, tran_x, plot_size=(14.8,12.3))
+    shap.summary_plot(shap_values, tran_x, plot_size=(20,12))
     # 保存各个变量的shape值的和
     df_shap_values=pd.DataFrame(shap_values)
     shap_list=[]
@@ -227,9 +231,9 @@ def main():
     df_shap = df_shap.sort_values(by=['shap值'], ascending=False)
     df_shap = df_shap.reset_index(drop=True)
 
-    writer = pd.ExcelWriter(project_path + '/result/df_19_shap值排序.xlsx')
+    writer = pd.ExcelWriter(project_path + '/result/df_20_shap值排序.xlsx')
     df_shap.to_excel(writer)
     writer.save()
-
+    '''
 if __name__=='__main__':
     main()
