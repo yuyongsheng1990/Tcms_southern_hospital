@@ -2,7 +2,7 @@
 # @Time: 2021/10/1821:24 
 # @Author: yuyongsheng
 # @Software: PyCharm
-# @Description: 南方医学他克莫司:(2) 数据建模，并画图
+# @Description: 南方医学他克莫司v1.0:(2) 数据建模，并画图
 
 import pandas as pd
 import numpy as np
@@ -25,18 +25,13 @@ def mkdir(path):
 
 def main():
     print('--------------------读取数据------------------------------')
-    df_model = pd.read_excel(project_path + '/result/df_17_插补tdm检测7天内最近的其他联合用药.xlsx')
+    df_model = pd.read_excel(project_path + '/result/df_17_建模数据集(插补).xlsx')
     df_model = df_model.drop(['Unnamed: 0'], axis=1)
     # 重新排序建模数据集df_model顺序
     df_model=df_model.sort_values(by=['test_result'],ascending=True)
     df_model=df_model.reset_index(drop=True)
     print(df_model.shape)
-    print(df_model['patient_id'].nunique())
-
     print(df_model.columns)
-    # 删除建模数据中不需要的字段，patient_id,long_d_order,drug_name,drug_spec,dosage,frequency,start_datetime,end_datetime,test_date,project_name,is_normal
-    df_model=df_model.drop(['patient_id','drug_name','drug_spec','start_datetime',
-                           'end_datetime','test_date','project_name','is_normal'],axis=1)
 
     print('-------------------------划分数据集---------------------------')
     from auto_ml import Predictor
@@ -46,7 +41,6 @@ def main():
     tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.25, random_state=5)
 
     print('-------------------------训练模型---------------------------')
-
     '''
     # auto_ml包中的XGBRegressor, CatBoostRegressor, LGBMRegressor
     # 划分训练集和测试集，比例为8:2
@@ -144,7 +138,7 @@ def main():
     print(mae)
 
     df_predictions= pd.DataFrame(data={'真实值':test_y,'预测值':predictions})
-    writer = pd.ExcelWriter(project_path + '/result/df_18_他克莫司血药浓度测试结果.xlsx')
+    writer = pd.ExcelWriter(project_path + '/result/df_18_他克莫司TDM模型测试结果.xlsx')
     df_predictions.to_excel(writer)
     writer.save()
 

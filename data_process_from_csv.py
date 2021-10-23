@@ -2,7 +2,7 @@
 # @Time: 2021/10/913:56 
 # @Author: yuyongsheng
 # @Software: PyCharm
-# @Description: 南方医学他克莫司:(1) 从csv文件中提取数据，进行数据处理
+# @Description: 南方医学他克莫司v1.0:(1) 从csv文件中提取数据，进行数据处理
 
 import pandas as pd
 pd.set_option('mode.chained_assignment', None)
@@ -637,7 +637,7 @@ print(tdm_7_other_filter.shape)  # (106,101)
 print(len(np.unique(tdm_7_other_filter['patient_id'])))  # 88
 
 # 4.4.3，人工删除无意义的其他检测指标，试带法初筛变量也不要
-# 删除离子、百分数
+# 离子、试带法初筛变量，不要！！！
 for i in tdm_7_other_filter.columns:  # i in list可能发生列表元素丢失，不能完全遍历
     if '离子' in i or '无机磷' in i:
         tdm_7_other_filter.drop(columns=[i],inplace=True)
@@ -648,7 +648,7 @@ for i in tdm_7_other_filter.columns:  # i in list可能发生列表元素丢失�
     elif '比值' in i or '比率' in i or '比积' in i or '容积' in i:
         tdm_7_other_filter.drop(columns=[i], inplace=True)
         continue
-    elif '试带法初筛' in i or '拆射计法' in i: # '仪器定量' in i or
+    elif '试带法初筛' in i or '拆射计法' in i:  # '仪器定量' in i or
         tdm_7_other_filter.drop(columns=[i], inplace=True)
         continue
     elif 'Status' in i or '透明度' in i or '颜色' in i or '等级' in i:
@@ -663,7 +663,7 @@ writer.save()
 
 #  4.5，然后，对其他检测指标进行数字化或分段处理，之后可以进行相关性分析，删除不相关指标。
 #  其中，相关性分析: 分类变量(二分类，Mann-Whitney U test;多分类，方差分析-统计量F); 连续变量，pearson相关性检验(统计量r);
-print('---------------------他克莫司TDM检测7天内的其他检验指标的相关性检验--------------------')
+print('---------------------他克莫司TDM检测7天内的其他检验指标 的相关性检验--------------------')
 # 获取变量列表，本案例从18开始
 index = list(tdm_7_other_filter.columns).index('BMI')
 variance_list = list(tdm_7_other_filter.columns)[index+1:]
@@ -678,7 +678,6 @@ for i in variance_list:
 
 #  其中，分类变量(二分类，Mann-Whitney U test;多分类，方差分析-统计量F);
 print('--------------------------多分类变量数字化---------------------------------')
-# 试带法初筛变量，不要！！！
 # 尿上皮细胞、尿葡萄糖、尿胆红素等分类变量，包含：阴性、阳性等定性变量。数字化转化，阴性用0表示，阳性用1表示.
 # discrete_list = ['尿白细胞(试带法初筛)','尿葡萄糖(试带法初筛)','尿蛋白(试带法初筛)','RBC.隐血(试带法初筛)']
 df_discrete = tdm_7_other_filter[discrete_list]
@@ -1000,30 +999,39 @@ for i in np.unique(tdm_7_other_interpolation['patient_id']):
     all_id.append(temp_between)
 
 # 将所有patient_id的其他用药数据进行合并
-df_data_modeling = all_id[0]
+drug_other_7_select = all_id[0]
 for n in range(1, len(all_id)):
-    df_data_modeling = pd.concat([df_data_modeling, all_id[n]], axis=0)
-df_data_modeling=df_data_modeling.reset_index(drop=True)
-print(df_data_modeling.shape)  # (106,27)
-print(len(np.unique(df_data_modeling['patient_id'])))  # 88
+    drug_other_7_select = pd.concat([drug_other_7_select, all_id[n]], axis=0)
+drug_other_7_select=drug_other_7_select.reset_index(drop=True)
+print(drug_other_7_select.shape)  # (106,27)
+print(len(np.unique(drug_other_7_select['patient_id'])))  # 88
 
 # 删除缺失超过50%的其他联合用药
-for i in np.unique(df_data_modeling.columns):
-    other_up = df_data_modeling[i].isnull().sum()
-    other_down = df_data_modeling[i].shape[0]
-    if df_data_modeling[i].isnull().sum()/df_data_modeling[i].shape[0] >= 0.5:
-        del df_data_modeling[i]
+for i in np.unique(drug_other_7_select.columns):
+    other_up = drug_other_7_select[i].isnull().sum()
+    other_down = drug_other_7_select[i].shape[0]
+    if drug_other_7_select[i].isnull().sum()/drug_other_7_select[i].shape[0] >= 0.5:
+        del drug_other_7_select[i]
 
-print(df_data_modeling.shape)  # (106,23)
-print(len(np.unique(df_data_modeling['patient_id'])))  # 88
+print(drug_other_7_select.shape)  # (106,23)
+print(len(np.unique(drug_other_7_select['patient_id'])))  # 88
 
 writer = pd.ExcelWriter(project_path + '/result/df_16_提取tdm检测7天内最近的其他联合用药.xlsx')
-df_data_modeling.to_excel(writer)
+drug_other_7_select.to_excel(writer)
+writer.save()
+
+# 提取建模数据
+df_model = drug_other_7_select.drop(['patient_id', 'drug_name', 'drug_spec', 'start_datetime',
+                          'end_datetime', 'test_date', 'project_name', 'is_normal'], axis=1)
+
+writer = pd.ExcelWriter(project_path + '/result/df_17_建模数据集(未插补).xlsx')
+df_model.to_excel(writer)
 writer.save()
 
 # 对其他联合用药进行插补
-df_data_modeling=missing_value_interpolation(df_data_modeling)
+df_data_modeling=missing_value_interpolation(df_model)
 
-writer = pd.ExcelWriter(project_path + '/result/df_17_插补tdm检测7天内最近的其他联合用药.xlsx')
+writer = pd.ExcelWriter(project_path + '/result/df_17_建模数据集(插补).xlsx')
 df_data_modeling.to_excel(writer)
 writer.save()
+

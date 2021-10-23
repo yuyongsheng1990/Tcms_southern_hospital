@@ -1,6 +1,6 @@
 *.csv
 .idea
-test.py
+data_statistic_for_jydata.py
 data
 jpg
 result
