@@ -25,14 +25,9 @@ def mkdir(path):
 
 def main():
     print('--------------------读取数据------------------------------')
-    df_model=pd.read_excel(project_path + '/data/data_model_from_jinyuan.xlsx')
-    # feature_list=['TDM检测结果','年龄','直接胆红素_检测结果','白/球比值_检测结果','钙离子阻抗剂','转氨酶比值_检测结果',
-    #               '丙氨酸氨基转移酶_检测结果','平均RBC血红蛋白浓度_检测结果','肌酸激酶_检测结果','总胆红素_检测结果','心型肌酸激酶_检测结果',
-    #               'gender','他克莫司日剂量','他克莫司频次','其他免疫抑制剂','活化部分凝血活酶时间_检测结果','糖皮质激素',
-    #         '低密度脂蛋白胆固醇_检测结果','平均红细胞体积_检测结果','间接胆红素_检测结果','白蛋白_检测结果','总蛋白_检测结果','质子泵']
-    # df_model=df_model[feature_list]
-    # df_model = pd.read_excel(project_path + '/result/df_17_建模数据集(插补).xlsx')
-    # df_model = df_model.drop(['Unnamed: 0'], axis=1)
+    df_model=pd.read_excel(project_path + '/data/v2.0/df_逐步向前筛选后的建模数据_插补.xlsx')
+    if 'Unnamed: 0' in df_model.columns:
+        df_model=df_model.drop(['Unnamed: 0'],axis=1)
     # 重新排序建模数据集df_model顺序
     df_model=df_model.sort_values(by=['TDM检测结果'],ascending=True)
     df_model=df_model.reset_index(drop=True)
@@ -68,7 +63,7 @@ def main():
     import catboost
     from sklearn.metrics import r2_score
     # XGBoost模型
-    xgb_model=xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
+    xgb_model=xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=0)
     # LightGBM模型
     # xgb_model=lightgbm.LGBMRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     # CatBoost模型
@@ -83,16 +78,15 @@ def main():
     # 随机森林，GBDT
     from sklearn.ensemble import RandomForestRegressor,GradientBoostingRegressor
     from sklearn.model_selection import GridSearchCV
-    
     # 列出参数列表
     tree_grid_parameter = {'n_estimators': list((10, 50, 100, 150, 200))}
     # 进行参数的搜索组合
-    grid = GridSearchCV(RandomForestRegressor(), param_grid=tree_grid_parameter, cv=3)
-    # grid = GridSearchCV(GradientBoostingRegressor(), param_grid=tree_grid_parameter, cv=3)
+    # grid = GridSearchCV(RandomForestRegressor(), param_grid=tree_grid_parameter, cv=3)
+    grid = GridSearchCV(GradientBoostingRegressor(), param_grid=tree_grid_parameter, cv=3)
     # 根据已有数据去拟合随机森林模型
     grid.fit(tran_x, tran_y)
-    rfr = RandomForestRegressor(n_estimators=grid.best_params_['n_estimators'])
-    # rfr = GradientBoostingRegressor(n_estimators=grid.best_params_['n_estimators'])
+    # rfr = RandomForestRegressor(n_estimators=grid.best_params_['n_estimators'])
+    rfr = GradientBoostingRegressor(n_estimators=grid.best_params_['n_estimators'])
     rfr.fit(tran_x, tran_y)
     # 预测缺失值
     predictions = rfr.predict(test_x)
@@ -114,6 +108,8 @@ def main():
     '''
     # Linear回归，Lasso回归，领回归
     from sklearn.linear_model import LinearRegression,Lasso,Ridge
+    # lcv = LinearRegression()
+    # lcv = Lasso()
     lcv = Ridge()
     lcv.fit(tran_x, tran_y)
     predictions = lcv.predict(test_x)
@@ -161,16 +157,20 @@ def main():
     # plt.plot(list(range(test_x.shape[0])), thresholds, color='blue', label='threshold')
     plt.legend(bbox_to_anchor=(1.1, 1))  # 显示图例
     '''
-    '''
+
     # 散点图
     # axis设置坐标轴的范围
     # plt.axis([-20, 20, 0, 200])
     # x为x轴中坐标x的值，y为y轴中坐标y的值，x与y都是长度相同的数组序列，color为点的颜色，marker为散点的形状，
-    # linewidth为点的大小
+    # 折线图刻度调小，要不然点都堆到一块了
+    ax = plt.gca()
+    ax.set_xlim(0,12)
+    ax.set_ylim(0,12)
     # plt.scatter(range(len(test_y)),test_y,c='r')
     plt.scatter(test_y,predictions,c='b')
     # 红色参照线
     plt.plot(list(range(test_y.shape[0])), list(range(test_y.shape[0])),color='r')
+    # plt.plot(list(range(30)), list(range(30)),color='r')
     plt.xlabel('Number of Events(unit)')
     plt.ylabel('Tac TDM CONC.')
     # plt.show()
@@ -179,8 +179,8 @@ def main():
     mkdir(jpg_path)
     plt.savefig(jpg_path + "/他克莫司血药浓度测试集折线图v2.0.jpg", dpi=300)
     plt.clf()  # 删除前面所画的图
-    '''
-    '''
+
+
     # 重要性
     import catboost,xgboost
     model_boost=xgboost.XGBRegressor()
@@ -190,6 +190,7 @@ def main():
     print(importance)
 
     df_importance= pd.DataFrame(data={'特征':tran_x.columns,'重要性评分':importance})
+    df_importance['重要性评分']=df_importance['重要性评分'].apply(lambda x: round(x,3))
     df_importance=df_importance.sort_values(['重要性评分'],ascending=False)
     df_importance=df_importance.reset_index(drop=True)
     writer = pd.ExcelWriter(project_path + '/result/df_19_模型重要性评分.xlsx')
@@ -214,7 +215,7 @@ def main():
 
     explainer = shap.TreeExplainer(shap_model)
     shap_values = explainer.shap_values(tran_x)  # 传入特征矩阵X，计算SHAP值
-    print(shap_values)
+    # print(shap_values)
     # summarize the effects of all the features
     shap.summary_plot(shap_values, tran_x, plot_size=(20,12))
     # 保存各个变量的shape值的和
@@ -234,6 +235,6 @@ def main():
     writer = pd.ExcelWriter(project_path + '/result/df_20_shap值排序.xlsx')
     df_shap.to_excel(writer)
     writer.save()
-    '''
+
 if __name__=='__main__':
     main()

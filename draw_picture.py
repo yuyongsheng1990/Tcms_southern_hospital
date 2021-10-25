@@ -2,7 +2,7 @@
 # @Time: 2021/10/2320:23 
 # @Author: yuyongsheng
 # @Software: PyCharm
-# @Description:南方他克莫司v2.0：(3)绘制逐步向前算法挑选特征r2折线图
+# @Description:南方他克莫司v2.0：(4)绘制逐步向前算法挑选特征r2折线图
 
 import pandas as pd
 import numpy as np
