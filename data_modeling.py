@@ -25,11 +25,18 @@ def mkdir(path):
 
 def main():
     print('--------------------读取数据------------------------------')
-    df_model=pd.read_excel(project_path + '/data/v2.0/df_逐步向前筛选后的建模数据_插补.xlsx')
+    df_model=pd.read_excel(project_path + '/data/v2.0/data_model_from_jinyuan.xlsx')
     if 'Unnamed: 0' in df_model.columns:
         df_model=df_model.drop(['Unnamed: 0'],axis=1)
+    col = ['身高(cm)', '他克莫司日剂量', '其他免疫抑制剂', '低密度脂蛋白胆固醇_检测结果', '平均红细胞体积_检测结果', '平均红细胞血红蛋白量_检测结果',
+           '白细胞计数_检测结果', '直接胆红素_检测结果', '红细胞比积测定_检测结果']
+    # 对偏离散化的连续变量取log/归一化
+    # target_mean=df_model['TDM检测结果'].mean()
+    # for i in df_model.columns:
+    #     if df_model[i].nunique() > 5:
+    #         df_model[i]=df_model[i].apply(lambda x: np.log(x) if x>1 else x)
     # 重新排序建模数据集df_model顺序
-    df_model=df_model.sort_values(by=['TDM检测结果'],ascending=True)
+    # df_model=df_model.sort_values(by=['TDM检测结果'],ascending=True)
     df_model=df_model.reset_index(drop=True)
     print(df_model.shape)
     print(df_model.columns)
@@ -37,7 +44,8 @@ def main():
     print('-------------------------划分数据集---------------------------')
     from auto_ml import Predictor
     # 划分训练集和测试集，比例为8:2
-    x = df_model.drop(['TDM检测结果'],axis=1)
+    # x = df_model.drop(['TDM检测结果'],axis=1)
+    x=df_model[col]
     y = df_model['TDM检测结果']
     tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.2, random_state=5)
 
@@ -63,7 +71,18 @@ def main():
     import catboost
     from sklearn.metrics import r2_score
     # XGBoost模型
-    xgb_model=xgboost.XGBRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=0)
+    # xgb_model=xgboost.XGBRegressor()
+    xgb_model=xgboost.XGBRegressor(max_depth=5,
+                            learning_rate=0.01,
+                            n_estimators=500,
+                            min_child_weight=0.5,
+                            eta=0.1,
+                            gamma=0.5,
+                            reg_lambda=10,
+                            subsample=0.5,
+                            colsample_bytree=0.8,
+                            nthread=4,
+                            scale_pos_weight=1)
     # LightGBM模型
     # xgb_model=lightgbm.LGBMRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     # CatBoost模型
@@ -146,16 +165,21 @@ def main():
     from matplotlib import rc
     rc('mathtext', default='regular')
     '''
-    折线图
+    # 折线图
     sub_axix = filter(lambda x: x % 20 == 0, list(range(test_x.shape[0])))
     plt.plot(list(range(test_x.shape[0])), np.array(list(predictions)),
-             color=(0.32941176470588235, 0.7294117647058823, 0.7490196078431373),
+             color='r',
              label='The Predictive Value of test result')
     # plt.plot(sub_axix, test_acys, color='red', label='testing accuracy')
     plt.plot(list(range(test_x.shape[0])), np.array(list(test_x['test_result'])), color='indianred',
              label='The True Value of test result')
     # plt.plot(list(range(test_x.shape[0])), thresholds, color='blue', label='threshold')
     plt.legend(bbox_to_anchor=(1.1, 1))  # 显示图例
+    # 判断图片保存路径是否存在，否则创建
+    jpg_path = project_path + "/jpg"
+    mkdir(jpg_path)
+    plt.savefig(jpg_path + "/他克莫司血药浓度测试集折线图v2.0.jpg", dpi=300)
+    plt.clf()  # 删除前面所画的图
     '''
 
     # 散点图
@@ -165,7 +189,7 @@ def main():
     # 折线图刻度调小，要不然点都堆到一块了
     ax = plt.gca()
     ax.set_xlim(0,12)
-    ax.set_ylim(0,12)
+    ax.set_ylim(0,10)
     # plt.scatter(range(len(test_y)),test_y,c='r')
     plt.scatter(test_y,predictions,c='b')
     # 红色参照线
@@ -177,10 +201,10 @@ def main():
     # 判断图片保存路径是否存在，否则创建
     jpg_path = project_path + "/jpg"
     mkdir(jpg_path)
-    plt.savefig(jpg_path + "/他克莫司血药浓度测试集折线图v2.0.jpg", dpi=300)
+    plt.savefig(jpg_path + "/他克莫司血药浓度测试集散点图v2.0.jpg", dpi=300)
     plt.clf()  # 删除前面所画的图
 
-
+    '''
     # 重要性
     import catboost,xgboost
     model_boost=xgboost.XGBRegressor()
@@ -235,6 +259,6 @@ def main():
     writer = pd.ExcelWriter(project_path + '/result/df_20_shap值排序.xlsx')
     df_shap.to_excel(writer)
     writer.save()
-
+    '''
 if __name__=='__main__':
     main()

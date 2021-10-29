@@ -5,6 +5,9 @@
 # @Description: 南方他克莫司v2.0：(1)统计变量平均数、四分位数;(2)正态性检验
 
 import os
+
+import scipy.stats
+
 project_path=os.getcwd()
 import pandas as pd
 pd.set_option('mode.chained_assignment', None)
@@ -15,7 +18,8 @@ from sklearn.model_selection import GridSearchCV
 
 # 读取津源建模数据
 df_model = pd.read_excel(project_path + '/data/v2.0/data_model_from_jinyuan.xlsx')
-# df_model = df_model.drop(['Unnamed: 0'], axis=1)
+if 'Unnamed: 0' in df_model.columns:
+    df_model = df_model.drop(['Unnamed: 0'], axis=1)
 '''
 print('----------------全体变量数据统计描述----------------------')
 # 统计全变量体系各变量的平均数、上下四分位数、缺失率
@@ -50,39 +54,43 @@ df_stat.to_excel(writer)
 writer.save()
 '''
 print('----------------连续变量正态性检验----------------------')
-from scipy.stats import shapiro,kstest,skewtest,kurtosistest
+from scipy.stats import kstest,shapiro,skewtest
 import math
+
+discrete_list = ['gender', '糖皮质激素', '质子泵', '钙离子阻抗剂', '其他免疫抑制剂', '克拉霉素或阿奇霉素']
+continuous_list = [x for x in df_model.columns if x not in discrete_list]
 
 feature_list=[]
 norm_list=[]  # 正态统计量
 p_list=[]  # 正态p值
-# kur_list=[]  # 峰度
 skew_list=[]  # 偏度
 
-for i in df_model.columns:
-    u = df_model[i].mean()
-    std = df_model[i].std()
+# 正态性检验。注意正态检验的时候不能有空值
+for feature in continuous_list:
+    data=df_model[df_model[feature].notnull()][feature]
+    u = data.mean()
+    std = data.std()
     # 判断变量为连续变量还是分类变量
-    if df_model[i].nunique()<=5:
+    if data.nunique()<=5:
         norm,p=np.nan,np.nan
     # 按样本量-正态性检验
-    elif df_model[i].shape[0]> 30:
-        norm,p=kstest(df_model[i],'norm',(u,std))
-        p=round(p,2)
+    elif df_model.shape[0]> 30:
+        norm,p=kstest(data,'norm',(u,std))
+        p=round(p,3)
     else:
-        norm,p=shapiro(df_model[i])
-        p=round(p,2)
-    feature_list.append(i)
+        norm,p=shapiro(data)
+        p=round(p,3)
+    feature_list.append(feature)
     norm_list.append(norm)
     p_list.append(p)
     # 在正态分布下，检验峰度和偏度，峰度和偏度是可选择，取log/归一化一切为了调整数据分布，提升建模效果
     # 现实生活中，绝大多数偏态几乎都是右偏，左偏极少存在。取log的时候，针对整体取log，当x>1时，log(x)
     if p > 0.05:  # 符合正态分布
-        skew_value=skewtest(df_model[i])
+        skew_value,p=skewtest(df_model[feature])
         # 偏度需要调整的阈值，可以自己设置1、5或10，还是那句话，一切为了建模
         if skew_value >=5:  # 认为右偏严重
-            print('右偏严重',i)
-            df_model[i]=df_model[i].apply(lambda x: math.log(x) if abs(x) >=1 else x)
+            print('右偏严重',feature)
+            df_model[feature]=df_model[feature].apply(lambda x: math.log(x) if abs(x) >=1 else x)
 df_norm_test=pd.DataFrame({'特征':feature_list,'正态统计量':norm_list,'p值':p_list})
 df_norm_test=df_norm_test.reset_index(drop=True)
 

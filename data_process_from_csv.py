@@ -16,7 +16,7 @@ import datetime
 project_path = os.getcwd()
 
 # 字符串转换为时间格式
-def str_to_datatime(x):
+def str_to_datetime(x):
     try:
         a = datetime.datetime.strptime(x, "%Y-%m-%d %H:%M:%S")
         return a
@@ -191,7 +191,7 @@ for i in range(drug_tcms.shape[0]):
         continue
 
 # 2）dosage去除mg
-drug_tcms['dosage'] = drug_tcms['dosage'].astype('str').apply(lambda x: x.replace('mg', '') if 'mg' in x else float(x.replace('g','')) *1000 if 'g' in x else 1)
+drug_tcms['dosage'] = drug_tcms['dosage'].astype('str').apply(lambda x: x.replace('mg', '') if 'mg' in x else float(x.replace('g','')) *1000 if 'g' in x else x)
 
 # 长嘱他克莫司用药异常频次dosage数据处理。处理'1/早','1/晚'为每日两次，去两次用药的平均dosage，频次改为每日两次(自定义)
 print('------------------他克莫司用药异常频次的dosage处理----------------------------------')
@@ -231,7 +231,7 @@ temp_all = temp_all.reset_index()
 del temp_all['index']
 
 drug_tcms_dosage = pd.concat([temp_all, bbb], axis=0)
-# drug_tcms_dosage['start_datetime']=drug_tcms_dosage['start_datetime'].astype('str').apply(str_to_datatime)
+# drug_tcms_dosage['start_datetime']=drug_tcms_dosage['start_datetime'].astype('str').apply(str_to_datetime)
 # 同一test_date下的他克莫司用药时间倒序
 drug_tcms_dosage = drug_tcms_dosage.sort_values(by=['patient_id', 'start_datetime'],ascending=[True, False])
 drug_tcms_dosage = drug_tcms_dosage.reset_index()
@@ -292,7 +292,7 @@ writer.save()
 
 # 计算他克莫司用药的日剂量和上一次日剂量
 print('------------------计算他克莫司上一次日剂量----------------------------------')
-drug_tcms_frequency_r['start_datetime']=drug_tcms_frequency_r['start_datetime'].astype('str').apply(str_to_datatime)
+drug_tcms_frequency_r['start_datetime']=drug_tcms_frequency_r['start_datetime'].astype('str').apply(str_to_datetime)
 drug_tcms_frequency_r =drug_tcms_frequency_r.sort_values(by=['patient_id','start_datetime'],ascending=[True,False])
 drug_tcms_frequency_r=drug_tcms_frequency_r.reset_index(drop=True)
 all_id=[]
@@ -325,8 +325,8 @@ writer.save()
 print('----------------------合并自身免疫疾病病人的他克莫司用药和tdm检测数据------------------------------')
 drug_test_tcms = pd.merge(drug_tcms_frequency_l,test_record_result_tdm, on=['patient_id'], how='inner')
 # 时间字段要注意数据类型，有些时间字段为str，有些为timestamp，类型冲突会报错
-drug_test_tcms['start_datetime'] = drug_test_tcms['start_datetime'].astype('str').apply(str_to_datatime)
-drug_test_tcms['test_date'] = drug_test_tcms['test_date'].astype('str').apply(str_to_datatime)
+drug_test_tcms['start_datetime'] = drug_test_tcms['start_datetime'].astype('str').apply(str_to_datetime)
+drug_test_tcms['test_date'] = drug_test_tcms['test_date'].astype('str').apply(str_to_datetime)
 
 # end_datetime为空的数据赋值为start_datetime
 aaa = drug_test_tcms[drug_test_tcms['end_datetime'].isnull()]
@@ -335,7 +335,7 @@ aaa['end_datetime'] = aaa['start_datetime']
 drug_test_tcms = pd.concat([aaa, bbb], axis=0)
 drug_test_tcms = drug_test_tcms.sort_values(by=['patient_id'],ascending=True)
 drug_test_tcms = drug_test_tcms.reset_index(drop=True)
-drug_test_tcms['end_datetime'] = drug_test_tcms['end_datetime'].astype('str').apply(str_to_datatime)
+drug_test_tcms['end_datetime'] = drug_test_tcms['end_datetime'].astype('str').apply(str_to_datetime)
 
 print(drug_test_tcms.shape)  # (3125,15)
 print(len(np.unique(drug_test_tcms['patient_id'])))  # 149
@@ -451,7 +451,7 @@ print('------------------同一位病人两次TDM检测间隔15天判断--------
 # 检测时间test_date升序，用药时间start_datetime降序，方便后面7-15天筛选。这样选出来是第一条tdm检测和最后一次用药。
 drug_test_tcms_frequency = drug_test_tcms_frequency.sort_values(by=['patient_id', 'test_date', 'start_datetime'],
                                                 ascending=[True, True, False])
-drug_test_tcms_frequency['test_date']=drug_test_tcms_frequency['test_date'].astype('str').apply(str_to_datatime)
+drug_test_tcms_frequency['test_date']=drug_test_tcms_frequency['test_date'].astype('str').apply(str_to_datetime)
 all_id = []
 for i in np.unique(drug_test_tcms_frequency['patient_id']):
     temp = drug_test_tcms_frequency[drug_test_tcms_frequency['patient_id'] == i]
@@ -539,7 +539,7 @@ for i in np.unique(drug_test_tcms_15['patient_id']):
     temp = test_record_result[test_record_result['patient_id'] == i]
     temp = temp[['patient_id', 'test_date', 'project_name', 'test_result', 'is_normal']]
     temp_other = temp[~temp['project_name'].str.contains('他克莫司')]  # 不包含他克莫司，为其他检验指标
-    temp_other['test_date'] = temp_other['test_date'].apply(str_to_datatime)
+    temp_other['test_date'] = temp_other['test_date'].apply(str_to_datetime)
     # 修改其他检测的字段名称，避免与tdm检测合并时发生字段名冲突
     temp_other = temp_other.rename(columns={'test_date': 'test_date_other', 'project_name': 'project_name_other',
                                             'test_result': 'test_result_other', 'is_normal': 'is_normal_other'})
@@ -930,7 +930,7 @@ aaa['end_datetime'] = aaa['start_datetime']
 drug_other = pd.concat([aaa, bbb], axis=0)
 drug_other = drug_other.sort_values(by=['patient_id'],ascending=True)
 drug_other = drug_other.reset_index(drop=True)
-drug_other['end_datetime'] = drug_other['end_datetime'].astype('str').apply(str_to_datatime)
+drug_other['end_datetime'] = drug_other['end_datetime'].astype('str').apply(str_to_datetime)
 
 # print(drug_other.shape)  # (19728,9)
 # print(drug_other['patient_id'].nunique())  # 948
@@ -953,7 +953,7 @@ for i in np.unique(tdm_7_other_interpolation['patient_id']):
     temp = drug_other[drug_other['patient_id'] == i]
     temp = temp[['patient_id', 'drug_name', 'drug_spec', 'dosage', 'frequency','start_datetime','end_datetime']]
     temp_drug_other = temp[~temp['drug_name'].str.contains('他克莫司')]  # 不包含他克莫司，为其他用药
-    temp_drug_other['start_datetime'] = temp_drug_other['start_datetime'].astype('str').apply(str_to_datatime)
+    temp_drug_other['start_datetime'] = temp_drug_other['start_datetime'].astype('str').apply(str_to_datetime)
 
     # 修改其他用药的字段名称，避免与tdm检测合并时发生字段名冲突
     temp_drug_other = temp_drug_other.rename(columns={'drug_name': 'drug_name_other', 'drug_spec': 'drug_spec_other',
