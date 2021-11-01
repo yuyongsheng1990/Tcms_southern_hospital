@@ -25,7 +25,7 @@ if 'Unnamed: 0' in df_model.columns:
 df_feature=pd.read_excel(project_path + '/data/v2.0/df_逐步向前特征测试结果.xlsx')
 if 'Unnamed: 0' in df_feature.columns:
     df_feature=df_feature.drop(['Unnamed: 0'],axis=1)
-df_model=df_model.sort_values(['TDM检测结果'])
+# df_model=df_model.sort_values(['TDM检测结果'])
 df_model=df_model.reset_index(drop=True)
 df_feature=df_feature.reset_index(drop=True)
 # print(df_model.shape)
@@ -49,7 +49,7 @@ r2_list=[]
 mse_list=[]
 rmse_list=[]
 for i in range(0,30):
-    feature_list=df_feature.loc[i,'特征'].split('\'')
+    feature_list=df_feature.loc[i,'feature_names'].split('\'')
     feature_list=feature_list[1:-1:2]
 
     tran_x_select=tran_x[feature_list]
@@ -67,22 +67,22 @@ for i in range(0,30):
                             scale_pos_weight=1)
 
     xgb_model.fit(tran_x_select,tran_y)
-    predictions=xgb_model.predict(tran_x_select)
+    predictions=xgb_model.predict(test_x_select)
 
     # 计算r2、MSE和RMSE
     from sklearn.metrics import mean_squared_error  # 均方误差
     from sklearn.metrics import mean_absolute_error  # 平方绝对误差
     from sklearn.metrics import r2_score  # R square
-    r2 = r2_score(tran_y,predictions)
+    r2 = r2_score(test_y,predictions)
     r2_list.append(r2)
     print('r2: ',r2)
-    mse=mean_squared_error(tran_y,predictions)
+    mse=mean_squared_error(test_y,predictions)
     mse_list.append(mse)
     print('MSE: ',mse)
     rmse=mse ** 0.5
     rmse_list.append(rmse)
     print('RMSE',rmse)
-    mae=mean_absolute_error(tran_y,predictions)
+    mae=mean_absolute_error(test_y,predictions)
     print('MAE: ',mae)
 # 画图
 print('-----------------------画图---------------------------')

@@ -28,7 +28,7 @@ def mkdir(path):
 
 # 逐步向前算法
 def feature_select_forward(df_model):
-
+    df_model = df_model[df_model.columns[2:]]
     from sklearn.preprocessing import StandardScaler
     discrete_list=['gender','糖皮质激素','质子泵','钙离子阻抗剂','其他免疫抑制剂','克拉霉素或阿奇霉素']
     continuous_list = [x for x in df_model.columns if x not in discrete_list]
@@ -41,14 +41,9 @@ def feature_select_forward(df_model):
     # 连续变量归一化
     for col in continuous_list:
         df_model[col] = df_model[col].apply(lambda x: np.log(x) if x > 0 else np.nan if x != x else 0)
-    # for i in continuous_list:
-    #     if df_model[i].nunique() > 5:
-    #         df_model[i]=df_model[i].apply(lambda x: np.log(x) if x>10 else x)
+
     tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.2, random_state=5)
-    # 归一化
-    # std = StandardScaler()
-    # tran_x_std = std.fit_transform(tran_x)
-    # 调用mlxtend包中的逐步向前算法，模型准确度指标-R2.
+
     from mlxtend.feature_selection import SequentialFeatureSelector as SFS
     from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
     import xgboost as xgb
@@ -56,45 +51,36 @@ def feature_select_forward(df_model):
 
     # k_features,Number of features to select,where k_features < the full feature set.
     # 基于当前所有变量中做逐步向前，从k=1一直迭代到k个特征
-    for i in range(1,30):
-        sfs = SFS(xgb.XGBRegressor(max_depth=5,
-                                learning_rate=0.1,
-                                n_estimators=500,
-                                min_child_weight=0.5,
-                                eta=0.1,
-                                gamma=0.5,
-                                reg_lambda=10,
-                                subsample=0.5,
-                                colsample_bytree=0.8,
-                                nthread=4,
-                                scale_pos_weight=1),
-        # sfs = SFS(catboost.CatBoostRegressor(n_estimators=500,learning_rate=0.01),
-                  k_features=i,
-                  forward=True,
-                  floating=False,
-                  verbose=2,
-                  scoring='r2',
-                  cv=3)  # cv表示交叉验证
-        sfs = sfs.fit(tran_x, tran_y)
-        # 逐步向前筛选结果，包括特征个数，最优特征组合及其r2
-        sfs_result = sfs.subsets_
-        print(sfs_result)
+
+    sfs = SFS(xgb.XGBRegressor(max_depth=5,
+                            learning_rate=0.1,
+                            n_estimators=500,
+                            min_child_weight=0.5,
+                            eta=0.1,
+                            gamma=0.5,
+                            reg_lambda=10,
+                            subsample=0.5,
+                            colsample_bytree=0.8,
+                            nthread=4,
+                            scale_pos_weight=1),
+    # sfs = SFS(catboost.CatBoostRegressor(n_estimators=500,learning_rate=0.01),
+              k_features=30,
+              forward=True,
+              floating=False,
+              verbose=2,
+              scoring='r2',
+              cv=3)  # cv表示交叉验证
+    sfs = sfs.fit(tran_x, tran_y)
+    # 逐步向前筛选结果，包括特征个数，最优特征组合及其r2
+    sfs_result = sfs.subsets_
+    print(sfs_result)
 
     df_sfs = pd.DataFrame(sfs_result)
     # DataFrame转置
     df_sfs_T=pd.DataFrame(df_sfs.values.T,index=df_sfs.columns,columns=df_sfs.index)
     df_sfs_T=df_sfs_T.reset_index(drop=True)
     # 保存逐步向前筛选结果
-    # # 如果用归一化，将特征名称由索引替换为汉字
-    # columns_list=list(df_model.columns)
-    # temp_list=list(df_sfs_T['feature_names'])
-    # feature_list=[]
-    # for i in temp_list:
-    #     list_i=[]
-    #     for j in i:
-    #         names=columns_list[int(j)]
-    #         list_i.append(names)
-    #     feature_list.append(list_i)
+
     r2_list=list(df_sfs_T['avg_score'])
     feature_list=list(df_sfs_T['feature_names'])
 
@@ -132,7 +118,7 @@ def feature_select_forward(df_model):
     # 判断图片保存路径是否存在，否则创建
     jpg_path = project_path + "/jpg"
     mkdir(jpg_path)
-    plt.savefig(jpg_path + "/逐步向前特征选择R2折线图_津源代码.jpg", dpi=300)
+    plt.savefig(jpg_path + "/逐步向前特征选择R2折线图.jpg", dpi=300)
     plt.clf()  # 删除前面所画的图
 
     '''
@@ -218,6 +204,8 @@ if __name__=='__main__':
     # 读取建模数据集
     print('--------------------读取数据------------------------------')
     df_model = pd.read_excel(project_path + '/data/v2.0/data_model_from_jinyuan.xlsx')
+    if 'Unnamed: 0' in df_model.columns:
+        df_model=df_model.drop(['Unnamed: 0'],axis=1)
     # df_model = df_model.drop(['patient_id','new_id'],axis=1)
     # 重新排序建模数据集df_model顺序
     # df_model=df_model.sort_values(by=['TDM检测结果'],ascending=True)

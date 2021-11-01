@@ -22,7 +22,9 @@ def mkdir(path):
     if not folder:  # 判断是否存在文件夹如果不存在则创建为文件夹
         os.makedirs(path)  # makedirs 创建文件时如果路径不存在会创建这个路径
 
-df = pd.read_excel(project_path+'/data/v2.0/data_model_from_jinyuan.xlsx')
+df = pd.read_excel(project_path+'/data/v2.0/建模用数据集（未插补）20210525-3.xlsx')
+if 'Unnamed: 0' in df.columns:
+    df = df.drop(['Unnamed: 0'], axis=1)
 continuous_list = [
   '年龄', '身高(cm)', '体重(kg)', 'BMI', '他克莫司频次', '他克莫司单次剂量', '他克莫司日剂量',
   'C反应蛋白_检测结果', '丙氨酸氨基转移酶_检测结果', '中性粒细胞总数_检测结果', '低密度脂蛋白胆固醇_检测结果',
@@ -49,12 +51,10 @@ col=['身高(cm)', '他克莫司日剂量', '其他免疫抑制剂', '低密度�
 df_model_4 = df_final_10_1.copy()
 x4, y4 = model_xy(df_model_4)
 all_all_results = []
-for j in range(1,53):
-    all_results = []
+for j in range(1,52):
     for xy in [[x4, y4]]:
-        print(xy)
         train_x, test_x, train_y, test_y = train_test_split(xy[0],xy[1],test_size=0.2,random_state=78)
-        # 津源xgboost模型
+    # 津源xgboost模型
     sfs = SFS(xgb.XGBRegressor(max_depth=5,
                               learning_rate=0.01,
                               n_estimators=500,
@@ -74,16 +74,28 @@ for j in range(1,53):
              cv=3)
 
     sfs = sfs.fit(train_x, train_y)
-    # 逐步向前R2折线图
-    metrics=sfs.get_metric_dict()
-    # 截取部分字典数据，取30个特征生成逐步向前R2折线图
-    metrics_part={key:value for key,value in metrics.items() if key <30}
-    fig = plot_sfs(metrics_part, kind='std_err',color='r')
-    plt.title('Sequential Forward Selection (R2)')
-    plt.grid()
-    # plt.show()
-    # 判断图片保存路径是否存在，否则创建
-    jpg_path = project_path + "/jpg"
-    mkdir(jpg_path)
-    plt.savefig(jpg_path + "/逐步向前特征选择R2折线图_津源代码.jpg", dpi=300)
-    plt.clf()  # 删除前面所画的图
+    # 逐步向前筛选结果，包括特征个数，最优特征组合及其r2
+    sfs_result = sfs.subsets_
+    print(sfs_result)
+    df_sfs = pd.DataFrame(sfs_result)
+    # DataFrame转置
+    df_sfs_T=pd.DataFrame(df_sfs.values.T,index=df_sfs.columns,columns=df_sfs.index)
+    df_sfs_T=df_sfs_T.reset_index(drop=True)
+    # 保存逐步向前筛选结果
+    r2_list=list(df_sfs_T['avg_score'])
+    feature_list=list(df_sfs_T['feature_names'])
+
+    # 根据逐步向前测试结果筛选最优特征组合
+    r2_max=max(r2_list)
+    print(r2_max)
+    r2_max_index=r2_list.index(r2_max)
+    df_feature_select=df_sfs_T.iloc[r2_max_index:r2_max_index+1,:]
+    all_all_results.append(df_feature_select)
+df_feature_select=all_all_results[0]
+for j in range(1,len(all_all_results)):
+    df_feature_select=pd.concat([df_feature_select,all_all_results[j]],axis=0)
+df_feature_select=df_feature_select.reset_index(drop=True)
+# 保存模型测试和测试结果到本地文件
+writer = pd.ExcelWriter(project_path + '/data/v2.0/df_逐步向前特征测试结果.xlsx')
+df_feature_select.to_excel(writer)
+writer.save()

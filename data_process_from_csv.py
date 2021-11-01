@@ -951,18 +951,13 @@ for i in np.unique(tdm_7_other_interpolation['patient_id']):
     del tdm_time['index']
     # 根据patient_id筛选出其他联合用药，并提取有效字段
     temp = drug_other[drug_other['patient_id'] == i]
-    temp = temp[['patient_id', 'drug_name', 'drug_spec', 'dosage', 'frequency','start_datetime','end_datetime']]
-    temp_drug_other = temp[~temp['drug_name'].str.contains('他克莫司')]  # 不包含他克莫司，为其他用药
-    temp_drug_other['start_datetime'] = temp_drug_other['start_datetime'].astype('str').apply(str_to_datetime)
 
     # 修改其他用药的字段名称，避免与tdm检测合并时发生字段名冲突
-    temp_drug_other = temp_drug_other.rename(columns={'drug_name': 'drug_name_other', 'drug_spec': 'drug_spec_other',
-                    'dosage': 'dosage_other', 'frequency': 'frequency_other','start_datetime':'start_datetime_other',
+    temp_drug_other = temp_drug_other.rename(columns={'drug_name': 'drug_name_other','start_datetime':'start_datetime_other',
                                                       'end_datetime':'end_datetime_other'})
     # 检测时间排序
     temp_drug_other = temp_drug_other.sort_values(by=['start_datetime_other'], ascending=True)
-    temp_drug_other = temp_drug_other.reset_index()
-    del temp_drug_other['index']
+    temp_drug_other = temp_drug_other.reset_index(drop=True)
 
     # 5.1，根据不同的tdm_time进行第二次数据分组
     between_id = []
@@ -979,15 +974,11 @@ for i in np.unique(tdm_7_other_interpolation['patient_id']):
             for m in range(1, len(last_id)):
                 temp_last = pd.concat([temp_last, last_id[m]], axis=0)
             # 5.2，根据patient_id、drug_name_other进行最近一次的筛选
-            temp_last = temp_last.sort_values(by=['patient_id','drug_name_other','start_datetime_other'], ascending=[True,True,False])
             temp_last = temp_last.drop_duplicates(subset=['patient_id', 'drug_name_other'], keep='first')
-            temp_last = temp_last.reset_index()
-            del temp_last['index']
-            # 5.3，将筛选出来的7天之内的最后一次其他检测的具体指标转换为列，整合到建模数据中
-            for n in range(len(np.unique(temp_last['drug_name_other']))):
-                tdm_time_1[temp_last.loc[n, 'drug_name_other']+'日剂量'] = temp_last.loc[n, 'dosage_other'] * temp_last.loc[n,'frequency_other']
-            tdm_time_1 = tdm_time_1.reset_index()
-            del tdm_time_1['index']
+            drug_other_list=list(temp_last['drug_name_other'])
+            # 5.3，将筛选出来的7天之内的最后一次其他检测的具体指标转换为0-1列，整合到建模数据中
+            for drug_other in drug_other_list:
+                tdm_time_1[drug_other] = 1
         between_id.append(tdm_time_1)
 
     # 将patient_id下所有符合要求的其他用药数据合并。
@@ -1003,21 +994,16 @@ drug_other_7_select = all_id[0]
 for n in range(1, len(all_id)):
     drug_other_7_select = pd.concat([drug_other_7_select, all_id[n]], axis=0)
 drug_other_7_select=drug_other_7_select.reset_index(drop=True)
+# 糖皮质激素|质子泵抑制剂|钙离子阻抗剂|其他免疫抑制剂|克拉霉素|阿奇霉素，
+# 将空值替换为0
+drug_other_7_select.fillna(0)
+# 如果是单列
+# drug_other_7_select['糖皮质激素'].fillna(0,inplace=True)
 print(drug_other_7_select.shape)  # (106,27)
 print(len(np.unique(drug_other_7_select['patient_id'])))  # 88
 
-# 删除缺失超过50%的其他联合用药
-for i in np.unique(drug_other_7_select.columns):
-    other_up = drug_other_7_select[i].isnull().sum()
-    other_down = drug_other_7_select[i].shape[0]
-    if drug_other_7_select[i].isnull().sum()/drug_other_7_select[i].shape[0] >= 0.5:
-        del drug_other_7_select[i]
 
-print(drug_other_7_select.shape)  # (106,23)
-print(len(np.unique(drug_other_7_select['patient_id'])))  # 88
 
-writer = pd.ExcelWriter(project_path + '/result/df_16_提取tdm检测7天内最近的其他联合用药.xlsx')
-drug_other_7_select.to_excel(writer)
 writer.save()
 
 # 提取建模数据

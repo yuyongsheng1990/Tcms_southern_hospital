@@ -65,16 +65,13 @@ norm_list=[]  # 正态统计量
 p_list=[]  # 正态p值
 skew_list=[]  # 偏度
 
-# 正态性检验。注意正态检验的时候不能有空值
+# 正态性检验。注意正态检验的时候不能有空值--用津源给的代码!
 for feature in continuous_list:
     data=df_model[df_model[feature].notnull()][feature]
     u = data.mean()
     std = data.std()
-    # 判断变量为连续变量还是分类变量
-    if data.nunique()<=5:
-        norm,p=np.nan,np.nan
     # 按样本量-正态性检验
-    elif df_model.shape[0]> 30:
+    if df_model.shape[0]> 30:
         norm,p=kstest(data,'norm',(u,std))
         p=round(p,3)
     else:
