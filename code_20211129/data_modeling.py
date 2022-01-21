@@ -25,7 +25,7 @@ def mkdir(path):
 
 def main():
     print('--------------------读取数据------------------------------')
-    df_model=pd.read_excel(project_path + '/data/v2.0/df_逐步向前筛选后的建模数据.xlsx')
+    df_model=pd.read_excel(project_path + '/data/v2.0/df_逐步向前筛选后的建模数据_插补.xlsx')
     if 'Unnamed: 0' in df_model.columns:
         df_model=df_model.drop(['Unnamed: 0'],axis=1)
     df_model=df_model[df_model.columns[2:]]
@@ -42,6 +42,16 @@ def main():
     y = df_model['TDM检测结果']
     tran_x, test_x, tran_y, test_y = train_test_split(x, y, test_size=0.2, random_state=5)
 
+    # Tabnet
+    from pytorch_tabnet.tab_model import TabNetClassifier, TabNetRegressor
+    clf = TabNetRegressor()  # TabNetRegressor()
+    X_train = tran_x.values
+    y_train = tran_y.values
+    clf.fit(X_train, y_train,
+            eval_set=[(X_train, y_train)]
+            )
+    predictions = clf.predict(test_x.to_numpy())
+
     print('-------------------------训练模型---------------------------')
 
     # 直接使用xgboost和catboost包，而不是auto_ml
@@ -51,19 +61,19 @@ def main():
     from sklearn.metrics import r2_score
     # XGBoost模型
     # xgb_model=xgboost.XGBRegressor()
-    xgb_model=xgboost.XGBRegressor(max_depth=5,
-                            learning_rate=0.01,
-                            n_estimators=500,
-                            min_child_weight=0.5,
-                            eta=0.1,
-                            gamma=0.5,
-                            reg_lambda=10,
-                            subsample=0.5,
-                            colsample_bytree=0.8,
-                            nthread=4,
-                            scale_pos_weight=1)
+    # xgb_model=xgboost.XGBRegressor(max_depth=5,
+    #                         learning_rate=0.01,
+    #                         n_estimators=500,
+    #                         min_child_weight=0.5,
+    #                         eta=0.1,
+    #                         gamma=0.5,
+    #                         reg_lambda=10,
+    #                         subsample=0.5,
+    #                         colsample_bytree=0.8,
+    #                         nthread=4,
+    #                         scale_pos_weight=1)
     # LightGBM模型
-    # xgb_model=lightgbm.LGBMRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
+    xgb_model=lightgbm.LGBMRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     # CatBoost模型
     # xgb_model=catboost.CatBoostRegressor(iterations=300, learning_rate=0.2, loss_function='RMSE',random_state=3)
     xgb_model.fit(tran_x,tran_y)
